@@ -3,8 +3,6 @@
 Formally verified encoder/decoder for the Michelson PACK binary format, targeting
 Solidity (EVM) for [Tezos X](https://tezos.com/) cross-runtime calls.
 
-Deployed on Etherlink at [`0x903632fC76B67910A663d243eefe70Cb54e96fa2`](https://explorer.etherlink.com/address/0x903632fC76B67910A663d243eefe70Cb54e96fa2).
-
 ## What this does
 
 Solidity contracts on Tezos X need to encode EVM values into Michelson `PACK`
