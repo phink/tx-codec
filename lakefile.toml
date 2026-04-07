@@ -1,0 +1,10 @@
+name = "MichelinePack"
+version = "0.1.0"
+defaultTargets = ["michelinepack"]
+
+[[lean_lib]]
+name = "MichelinePack"
+
+[[lean_exe]]
+name = "michelinepack"
+root = "Main"

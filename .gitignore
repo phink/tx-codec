@@ -1,0 +1,42 @@
+# Lean build artifacts
+/.lake/
+
+# Lean doc-gen4 build artifacts
+/docbuild/.lake/
+
+# Solidity build artifacts
+/sol-test/out/
+/sol-test/out-halmos/
+/sol-test/cache/
+/sol-test/broadcast/
+
+# Foundry lib (installed via forge install, not committed)
+/sol-test/lib/
+
+# Python venv (Halmos)
+/sol-test/.venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+texput.log
+
+# Misc
+*.bak
+*.orig
