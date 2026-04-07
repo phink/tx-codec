@@ -878,13 +878,13 @@ library Michelson {
     function unpackOption(bytes memory packed) internal pure returns (bool isSome, bytes memory value) {
         return MichelsonSpec.toOption(MichelsonSpec.unpack(packed));
     }
-    function unpackList(bytes memory packed) internal pure returns (bytes memory payload) {
+    function unpackList(bytes memory packed) internal pure returns (bytes[] memory) {
         return MichelsonSpec.toList(MichelsonSpec.unpack(packed));
     }
-    function unpackMap(bytes memory packed) internal pure returns (bytes memory payload) {
+    function unpackMap(bytes memory packed) internal pure returns (bytes[] memory) {
         return MichelsonSpec.toMap(MichelsonSpec.unpack(packed));
     }
-    function unpackSet(bytes memory packed) internal pure returns (bytes memory payload) {
+    function unpackSet(bytes memory packed) internal pure returns (bytes[] memory) {
         return MichelsonSpec.toSet(MichelsonSpec.unpack(packed));
     }
 }

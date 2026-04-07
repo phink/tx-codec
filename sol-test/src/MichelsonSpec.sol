@@ -440,7 +440,7 @@ library MichelsonSpec {
         } else         revert UnexpectedNodeTag(0x05, nodeTag);
     }
 
-    function toList(bytes memory micheline) internal pure returns (bytes memory payload) {
+    function _toListPayload(bytes memory micheline) private pure returns (bytes memory payload) {
         if ((micheline.length < 5)) {
             revert InputTruncated();
         }
@@ -457,11 +457,28 @@ library MichelsonSpec {
         payload = _slice(micheline, 5, len);
     }
 
-    function toMap(bytes memory micheline) internal pure returns (bytes memory) {
+    function toList(bytes memory micheline) internal pure returns (bytes[] memory items) {
+        bytes memory payload = _toListPayload(micheline);
+        uint256 count = 0;
+        uint256 offset = 0;
+        while ((offset < payload.length)) {
+            offset = (offset + _michelineNodeSize(payload, offset, 0));
+            count = (count + 1);
+        }
+        items = new bytes[](count);
+        offset = 0;
+        for (uint256 i = 0; i < count; i++) {
+            uint256 size = _michelineNodeSize(payload, offset, 0);
+            items[i] = _slice(payload, offset, size);
+            offset = (offset + size);
+        }
+    }
+
+    function toMap(bytes memory micheline) internal pure returns (bytes[] memory) {
         return toList(micheline);
     }
 
-    function toSet(bytes memory micheline) internal pure returns (bytes memory) {
+    function toSet(bytes memory micheline) internal pure returns (bytes[] memory) {
         return toList(micheline);
     }
 

@@ -221,16 +221,17 @@ contract HalmosAsmEquivalence is Test {
     function check_list_empty_roundtrip() public pure {
         bytes[] memory items = new bytes[](0);
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.list(items));
-        bytes memory payload = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
-        assert(payload.length == 0);
+        bytes[] memory decoded = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
+        assert(decoded.length == 0);
     }
 
     function check_list_1nat_roundtrip(uint256 a) public pure {
         bytes[] memory items = new bytes[](1);
         items[0] = MichelsonSpec.nat(a);
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.list(items));
-        bytes memory payload = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
-        assert(keccak256(payload) == keccak256(items[0]));
+        bytes[] memory decoded = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
+        assert(decoded.length == 1);
+        assert(keccak256(decoded[0]) == keccak256(items[0]));
     }
 
     function check_list_2nat_roundtrip(uint256 a, uint256 b) public pure {
@@ -238,17 +239,18 @@ contract HalmosAsmEquivalence is Test {
         items[0] = MichelsonSpec.nat(a);
         items[1] = MichelsonSpec.nat(b);
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.list(items));
-        bytes memory payload = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
-        bytes memory expected = abi.encodePacked(items[0], items[1]);
-        assert(keccak256(payload) == keccak256(expected));
+        bytes[] memory decoded = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
+        assert(decoded.length == 2);
+        assert(keccak256(decoded[0]) == keccak256(items[0]));
+        assert(keccak256(decoded[1]) == keccak256(items[1]));
     }
 
     function check_unpackList_empty_asm_eq_spec() public pure {
         bytes[] memory items = new bytes[](0);
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.list(items));
-        bytes memory specPayload = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
-        bytes memory asmPayload = Michelson.unpackList(packed);
-        assert(keccak256(asmPayload) == keccak256(specPayload));
+        bytes[] memory specItems = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
+        bytes[] memory asmItems = Michelson.unpackList(packed);
+        assert(asmItems.length == specItems.length);
     }
 
     function check_unpackList_2nat_asm_eq_spec(uint256 a, uint256 b) public pure {
@@ -256,9 +258,12 @@ contract HalmosAsmEquivalence is Test {
         items[0] = MichelsonSpec.nat(a);
         items[1] = MichelsonSpec.nat(b);
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.list(items));
-        bytes memory specPayload = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
-        bytes memory asmPayload = Michelson.unpackList(packed);
-        assert(keccak256(asmPayload) == keccak256(specPayload));
+        bytes[] memory specItems = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
+        bytes[] memory asmItems = Michelson.unpackList(packed);
+        assert(asmItems.length == specItems.length);
+        for (uint i = 0; i < specItems.length; i++) {
+            assert(keccak256(asmItems[i]) == keccak256(specItems[i]));
+        }
     }
 }
 

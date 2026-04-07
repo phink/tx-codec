@@ -51,6 +51,7 @@ inductive SolExpr where
   | memberAccess : SolExpr → String → SolExpr   -- x.length
   | arrayIndex : SolExpr → SolExpr → SolExpr    -- x[i] (no uint8 cast)
   | newBytes : SolExpr → SolExpr                 -- new bytes(n)
+  | newExpr : String → SolExpr → SolExpr         -- new Type(n)
   | castBytes4 : SolExpr → SolExpr               -- bytes4(uint32(x))
   | typeCast : String → SolExpr → SolExpr        -- string(x), bytes(x)
   | typeMax : String → SolExpr                   -- type(uint32).max
@@ -112,6 +113,7 @@ partial def SolExpr.toSol : SolExpr → String
   | .memberAccess e field => s!"{e.toSol}.{field}"
   | .arrayIndex arr idx => s!"{arr.toSol}[{idx.toSol}]"
   | .newBytes sz => s!"new bytes({sz.toSol})"
+  | .newExpr ty sz => s!"new {ty}({sz.toSol})"
   | .castBytes4 e => s!"bytes4(uint32({e.toSol}))"
   | .typeCast ty e => s!"{ty}({e.toSol})"
   | .typeMax ty => s!"type({ty}).max"
@@ -1369,12 +1371,12 @@ def irToOptionFn : SolFunc := {
   ]
 }
 
-/-- toList(micheline): decode Micheline list, returns raw payload -/
-def irToListFn : SolFunc := {
-  name := "toList"
+/-- _toListPayload(micheline): internal helper, returns raw payload -/
+def irToListPayloadFn : SolFunc := {
+  name := "_toListPayload"
   params := [("bytes memory", "micheline")]
   retType := "bytes memory payload"
-  visibility := "internal"
+  visibility := "private"
   body := .seq [
     .ifOnly (.binop "<" michelineLen (.num 5))
       (.revert "InputTruncated" []),
@@ -1387,20 +1389,49 @@ def irToListFn : SolFunc := {
   ]
 }
 
-/-- toMap(micheline): delegate to toList -/
+/-- toList(micheline): decode Micheline list into individual items -/
+def irToListFn : SolFunc := {
+  name := "toList"
+  params := [("bytes memory", "micheline")]
+  retType := "bytes[] memory items"
+  visibility := "internal"
+  body := .seq [
+    .letDecl "bytes memory" "payload" (.call "_toListPayload" [.var "micheline"]),
+    -- Pass 1: count items
+    .letDecl "uint256" "count" (.num 0),
+    .letDecl "uint256" "offset" (.num 0),
+    .whileLoop (.binop "<" (.var "offset") (.memberAccess (.var "payload") "length")) [
+      .assign "offset" (.binop "+" (.var "offset")
+        (.call "_michelineNodeSize" [.var "payload", .var "offset", .num 0])),
+      .assign "count" (.binop "+" (.var "count") (.num 1))
+    ],
+    -- Pass 2: extract each item
+    .assignField "items" (.newExpr "bytes[]" (.var "count")),
+    .assign "offset" (.num 0),
+    .forLoop "i" "0" (.var "count") [
+      .letDecl "uint256" "size"
+        (.call "_michelineNodeSize" [.var "payload", .var "offset", .num 0]),
+      .assignIndex (.var "items") (.var "i")
+        (.call "_slice" [.var "payload", .var "offset", .var "size"]),
+      .assign "offset" (.binop "+" (.var "offset") (.var "size"))
+    ]
+  ]
+}
+
+/-- toMap(micheline): delegate to toList (returns items) -/
 def irToMapFn : SolFunc := {
   name := "toMap"
   params := [("bytes memory", "micheline")]
-  retType := "bytes memory"
+  retType := "bytes[] memory"
   visibility := "internal"
   body := .ret (.call "toList" [.var "micheline"])
 }
 
-/-- toSet(micheline): delegate to toList -/
+/-- toSet(micheline): delegate to toList (returns items) -/
 def irToSetFn : SolFunc := {
   name := "toSet"
   params := [("bytes memory", "micheline")]
-  retType := "bytes memory"
+  retType := "bytes[] memory"
   visibility := "internal"
   body := .ret (.call "toList" [.var "micheline"])
 }
@@ -1577,7 +1608,7 @@ def irFunctions : List SolFunc :=
   , irToStringFn, irToBytesFn
   , irToMutezFn, irToTimestampFn
   , irToPairFn, irToOrFn, irToOptionFn
-  , irToListFn, irToMapFn, irToSetFn
+  , irToListPayloadFn, irToListFn, irToMapFn, irToSetFn
   , irToAddressFn, irToKeyHashFn, irToKeyFn, irToSignatureFn
   , irToChainIdFn, irToContractFn
   -- helpers

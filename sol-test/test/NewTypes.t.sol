@@ -39,12 +39,12 @@ contract NewTypesHarness {
     function elt(bytes memory k, bytes memory v) external pure returns (bytes memory) { return MichelsonSpec.elt(k, v); }
     function map(bytes[] memory elts) external pure returns (bytes memory) { return MichelsonSpec.map(elts); }
     function packMap(bytes[] memory elts) external pure returns (bytes memory) { return MichelsonSpec.pack(MichelsonSpec.map(elts)); }
-    function unpackMap(bytes memory packed) external pure returns (bytes memory) { return MichelsonSpec.toMap(MichelsonSpec.unpack(packed)); }
+    function unpackMap(bytes memory packed) external pure returns (bytes[] memory) { return MichelsonSpec.toMap(MichelsonSpec.unpack(packed)); }
 
     // Set
     function set(bytes[] memory items) external pure returns (bytes memory) { return MichelsonSpec.set(items); }
     function packSet(bytes[] memory items) external pure returns (bytes memory) { return MichelsonSpec.pack(MichelsonSpec.set(items)); }
-    function unpackSet(bytes memory packed) external pure returns (bytes memory) { return MichelsonSpec.toSet(MichelsonSpec.unpack(packed)); }
+    function unpackSet(bytes memory packed) external pure returns (bytes[] memory) { return MichelsonSpec.toSet(MichelsonSpec.unpack(packed)); }
 
     // Inner encoders for building test values
     function nat(uint256 n) external pure returns (bytes memory) { return MichelsonSpec.nat(n); }
@@ -143,15 +143,17 @@ contract MichelsonMapTest is Test {
         assertEq(h.packMap(elts), hex"050200000000");
     }
 
-    // Roundtrip: unpackMap returns the raw payload
+    // Roundtrip: unpackMap returns individual Elt nodes
     function test_unpackMap() public view {
-        bytes memory payload = h.unpackMap(hex"0502000000140704000101000000016107040002010000000162");
-        assertEq(payload, hex"0704000101000000016107040002010000000162");
+        bytes[] memory elts = h.unpackMap(hex"0502000000140704000101000000016107040002010000000162");
+        assertEq(elts.length, 2);
+        assertEq(elts[0], hex"07040001010000000161");
+        assertEq(elts[1], hex"07040002010000000162");
     }
 
     function test_unpackMap_empty() public view {
-        bytes memory payload = h.unpackMap(hex"050200000000");
-        assertEq(payload.length, 0);
+        bytes[] memory elts = h.unpackMap(hex"050200000000");
+        assertEq(elts.length, 0);
     }
 }
 
@@ -179,8 +181,11 @@ contract MichelsonSetTest is Test {
     }
 
     function test_unpackSet() public view {
-        bytes memory payload = h.unpackSet(hex"050200000006000100020003");
-        assertEq(payload, hex"000100020003");
+        bytes[] memory items = h.unpackSet(hex"050200000006000100020003");
+        assertEq(items.length, 3);
+        assertEq(items[0], hex"0001");
+        assertEq(items[1], hex"0002");
+        assertEq(items[2], hex"0003");
     }
 }
 

@@ -136,16 +136,16 @@ contract AsmDiffHarness {
     // Map/Set: spec
     function specElt(bytes memory k, bytes memory v) external pure returns (bytes memory) { return MichelsonSpec.elt(k, v); }
     function specPackMap(bytes[] memory elts) external pure returns (bytes memory) { return MichelsonSpec.pack(MichelsonSpec.map(elts)); }
-    function specUnpackMap(bytes memory p) external pure returns (bytes memory) { return MichelsonSpec.toMap(MichelsonSpec.unpack(p)); }
+    function specUnpackMap(bytes memory p) external pure returns (bytes[] memory) { return MichelsonSpec.toMap(MichelsonSpec.unpack(p)); }
     function specPackSet(bytes[] memory items) external pure returns (bytes memory) { return MichelsonSpec.pack(MichelsonSpec.set(items)); }
-    function specUnpackSet(bytes memory p) external pure returns (bytes memory) { return MichelsonSpec.toSet(MichelsonSpec.unpack(p)); }
+    function specUnpackSet(bytes memory p) external pure returns (bytes[] memory) { return MichelsonSpec.toSet(MichelsonSpec.unpack(p)); }
 
     // Map/Set: asm
     function asmElt(bytes memory k, bytes memory v) external pure returns (bytes memory) { return Michelson.elt(k, v); }
     function asmPackMap(bytes[] memory elts) external pure returns (bytes memory) { return Michelson.packMap(elts); }
-    function asmUnpackMap(bytes memory p) external pure returns (bytes memory) { return Michelson.unpackMap(p); }
+    function asmUnpackMap(bytes memory p) external pure returns (bytes[] memory) { return Michelson.unpackMap(p); }
     function asmPackSet(bytes[] memory items) external pure returns (bytes memory) { return Michelson.packSet(items); }
-    function asmUnpackSet(bytes memory p) external pure returns (bytes memory) { return Michelson.unpackSet(p); }
+    function asmUnpackSet(bytes memory p) external pure returns (bytes[] memory) { return Michelson.unpackSet(p); }
 
     // Composite: spec
     function specPair(bytes memory a, bytes memory b) external pure returns (bytes memory) { return MichelsonSpec.pair(a, b); }
@@ -163,7 +163,7 @@ contract AsmDiffHarness {
     function specUnpackPair(bytes memory p) external pure returns (bytes memory, bytes memory) { return MichelsonSpec.toPair(MichelsonSpec.unpack(p)); }
     function specUnpackOr(bytes memory p) external pure returns (bool, bytes memory) { return MichelsonSpec.toOr(MichelsonSpec.unpack(p)); }
     function specUnpackOption(bytes memory p) external pure returns (bool, bytes memory) { return MichelsonSpec.toOption(MichelsonSpec.unpack(p)); }
-    function specUnpackList(bytes memory p) external pure returns (bytes memory) { return MichelsonSpec.toList(MichelsonSpec.unpack(p)); }
+    function specUnpackList(bytes memory p) external pure returns (bytes[] memory) { return MichelsonSpec.toList(MichelsonSpec.unpack(p)); }
 
     // Composite: asm
     function asmPair(bytes memory a, bytes memory b) external pure returns (bytes memory) { return Michelson.pair(a, b); }
@@ -181,7 +181,7 @@ contract AsmDiffHarness {
     function asmUnpackPair(bytes memory p) external pure returns (bytes memory, bytes memory) { return Michelson.unpackPair(p); }
     function asmUnpackOr(bytes memory p) external pure returns (bool, bytes memory) { return Michelson.unpackOr(p); }
     function asmUnpackOption(bytes memory p) external pure returns (bool, bytes memory) { return Michelson.unpackOption(p); }
-    function asmUnpackList(bytes memory p) external pure returns (bytes memory) { return Michelson.unpackList(p); }
+    function asmUnpackList(bytes memory p) external pure returns (bytes[] memory) { return Michelson.unpackList(p); }
 }
 
 // ================================================================
@@ -671,7 +671,9 @@ contract AsmDiffListTest is Test {
     function test_unpackList_empty_asm_eq_spec() public view {
         bytes[] memory items = new bytes[](0);
         bytes memory packed = h.specPackList(items);
-        assertEq(keccak256(h.asmUnpackList(packed)), keccak256(h.specUnpackList(packed)));
+        bytes[] memory specItems = h.specUnpackList(packed);
+        bytes[] memory asmItems = h.asmUnpackList(packed);
+        assertEq(asmItems.length, specItems.length);
     }
 
     function testFuzz_unpackList_2nat_asm_eq_spec(uint256 a, uint256 b) public view {
@@ -679,6 +681,11 @@ contract AsmDiffListTest is Test {
         items[0] = MichelsonSpec.nat(a);
         items[1] = MichelsonSpec.nat(b);
         bytes memory packed = h.specPackList(items);
-        assertEq(keccak256(h.asmUnpackList(packed)), keccak256(h.specUnpackList(packed)));
+        bytes[] memory specItems = h.specUnpackList(packed);
+        bytes[] memory asmItems = h.asmUnpackList(packed);
+        assertEq(asmItems.length, specItems.length);
+        for (uint i = 0; i < specItems.length; i++) {
+            assertEq(keccak256(asmItems[i]), keccak256(specItems[i]));
+        }
     }
 }

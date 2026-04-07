@@ -30,7 +30,7 @@ contract CompositeHarness {
     function unpackPair(bytes memory p) external pure returns (bytes memory, bytes memory) { return MichelsonSpec.toPair(MichelsonSpec.unpack(p)); }
     function unpackOr(bytes memory p) external pure returns (bool, bytes memory) { return MichelsonSpec.toOr(MichelsonSpec.unpack(p)); }
     function unpackOption(bytes memory p) external pure returns (bool, bytes memory) { return MichelsonSpec.toOption(MichelsonSpec.unpack(p)); }
-    function unpackList(bytes memory p) external pure returns (bytes memory) { return MichelsonSpec.toList(MichelsonSpec.unpack(p)); }
+    function unpackList(bytes memory p) external pure returns (bytes[] memory) { return MichelsonSpec.toList(MichelsonSpec.unpack(p)); }
 }
 
 contract CompositePairTest is Test {
@@ -164,13 +164,16 @@ contract CompositeListTest is Test {
     }
 
     function test_unpackList_123() public view {
-        bytes memory payload = h.unpackList(hex"050200000006000100020003");
-        assertEq(payload, hex"000100020003");
+        bytes[] memory items = h.unpackList(hex"050200000006000100020003");
+        assertEq(items.length, 3);
+        assertEq(items[0], hex"0001");
+        assertEq(items[1], hex"0002");
+        assertEq(items[2], hex"0003");
     }
 
     function test_unpackList_empty() public view {
-        bytes memory payload = h.unpackList(hex"050200000000");
-        assertEq(payload.length, 0);
+        bytes[] memory items = h.unpackList(hex"050200000000");
+        assertEq(items.length, 0);
     }
 
     // Roundtrip
@@ -180,9 +183,10 @@ contract CompositeListTest is Test {
         items[1] = h.nat(200);
         items[2] = h.nat(300);
         bytes memory packed = h.packList(items);
-        bytes memory payload = h.unpackList(packed);
-        // Payload should be the concatenation of the items
-        bytes memory expected = abi.encodePacked(items[0], items[1], items[2]);
-        assertEq(keccak256(payload), keccak256(expected));
+        bytes[] memory decoded = h.unpackList(packed);
+        assertEq(decoded.length, items.length);
+        for (uint i = 0; i < items.length; i++) {
+            assertEq(keccak256(decoded[i]), keccak256(items[i]));
+        }
     }
 }
