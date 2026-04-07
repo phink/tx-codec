@@ -1291,6 +1291,17 @@ theorem packChainId_unpackChainId (bs : List (Fin 256)) (data : List (Fin 256))
     packChainId data = bs :=
   packBytes_unpackBytes bs data hd
 
+-- Map/Set right roundtrips (delegate to list at binary level)
+theorem packMapV_unpackMapV (bs : List (Fin 256)) (payload : List (Fin 256))
+    (hd : unpackMapV bs = some payload) :
+    [byte 0x05, byte 0x02] ++ encodeUint32BE payload.length ++ payload = bs :=
+  packListV_unpackListV bs payload (by simp [unpackMapV] at hd; exact hd)
+
+theorem packSetV_unpackSetV (bs : List (Fin 256)) (payload : List (Fin 256))
+    (hd : unpackSetV bs = some payload) :
+    [byte 0x05, byte 0x02] ++ encodeUint32BE payload.length ++ payload = bs :=
+  packListV_unpackListV bs payload hd
+
 -- ============================================================
 -- Left roundtrip: unpackPairV ∘ packPairV = id
 -- Requires showing michelineNodeSize correctly computes the size

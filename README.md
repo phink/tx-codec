@@ -37,9 +37,9 @@ lake exe michelinepack decode 05002a  # -> 42
 | `pair` | `Michelson.pair(a, b)` | `Michelson.toPair(data)` | `(bytes, bytes)` | Both |
 | `or` | `Michelson.left(a)` / `right(b)` | `Michelson.toOr(data)` | `(bool, bytes)` | Both |
 | `option` | `Michelson.some(a)` / `none()` | `Michelson.toOption(data)` | `(bool, bytes)` | Both |
-| `list` | `Michelson.list(items)` | `Michelson.toList(data)` | `bytes` (payload) | Both |
-| `map` | `Michelson.map(elts)` | `Michelson.toMap(data)` | `bytes` (payload) | Left |
-| `set` | `Michelson.set(items)` | `Michelson.toSet(data)` | `bytes` (payload) | Left |
+| `list` | `Michelson.list(items)` | `Michelson.toList(data)` | `bytes[]` | Both |
+| `map` | `Michelson.map(elts)` | `Michelson.toMap(data)` | `bytes[]` | Both |
+| `set` | `Michelson.set(items)` | `Michelson.toSet(data)` | `bytes[]` | Both |
 | `address` | `Michelson.address_(addr)` | `Michelson.toAddress(data)` | `bytes` (22B raw) | Both |
 | `key_hash` | `Michelson.keyHash(kh)` | `Michelson.toKeyHash(data)` | `bytes` (21B raw) | Both |
 | `key` | `Michelson.key(k)` | `Michelson.toKey(data)` | `bytes` (raw) | Both |
