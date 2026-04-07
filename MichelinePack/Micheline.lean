@@ -1003,4 +1003,344 @@ theorem packInt_unpackInt (bs : List (Fin 256)) (z : Int)
   | [] => simp at hd
   | [_] => simp at hd
 
+-- ============================================================
+-- Right roundtrip: packString ∘ unpackString = id
+-- ============================================================
+
+theorem packString_unpackString (bs : List (Fin 256)) (s : List (Fin 256))
+    (hd : unpackString bs = some s) :
+    packString s = bs := by
+  simp only [unpackString] at hd
+  match bs with
+  | first :: second :: rest =>
+    simp only at hd
+    split at hd
+    · rename_i h05
+      obtain ⟨hf, hs⟩ := h05
+      match hrest : decodeUint32BE rest with
+      | some (len, payload) =>
+        simp only [hrest] at hd
+        split at hd
+        · rename_i hlen
+          simp only [Option.some.injEq] at hd
+          subst hd
+          match rest, hrest with
+          | b0 :: b1 :: b2 :: b3 :: rest', hrest' =>
+            simp only [decodeUint32BE, Option.some.injEq, Prod.mk.injEq] at hrest'
+            obtain ⟨hval, hrem⟩ := hrest'
+            subst hval; subst hrem
+            simp only [packString, byte, List.cons_append, List.nil_append]
+            rw [hlen, encodeUint32BE_decodeUint32BE b0 b1 b2 b3]
+            congr 1
+            · exact Fin.ext hf.symm
+            congr 1
+            · exact Fin.ext hs.symm
+        · simp at hd
+      | none =>
+        simp only [hrest] at hd; simp at hd
+    · simp at hd
+  | [] => simp at hd
+  | [_] => simp at hd
+
+-- ============================================================
+-- Right roundtrip: packBytes ∘ unpackBytes = id
+-- ============================================================
+
+theorem packBytes_unpackBytes (bs : List (Fin 256)) (data : List (Fin 256))
+    (hd : unpackBytes bs = some data) :
+    packBytes data = bs := by
+  simp only [unpackBytes] at hd
+  match bs with
+  | first :: second :: rest =>
+    simp only at hd
+    split at hd
+    · rename_i h05
+      obtain ⟨hf, hs⟩ := h05
+      match hrest : decodeUint32BE rest with
+      | some (len, payload) =>
+        simp only [hrest] at hd
+        split at hd
+        · rename_i hlen
+          simp only [Option.some.injEq] at hd
+          subst hd
+          match rest, hrest with
+          | b0 :: b1 :: b2 :: b3 :: rest', hrest' =>
+            simp only [decodeUint32BE, Option.some.injEq, Prod.mk.injEq] at hrest'
+            obtain ⟨hval, hrem⟩ := hrest'
+            subst hval; subst hrem
+            simp only [packBytes, encodeBytesMM, byte, List.cons_append, List.nil_append]
+            rw [hlen, encodeUint32BE_decodeUint32BE b0 b1 b2 b3]
+            congr 1
+            · exact Fin.ext hf.symm
+            congr 1
+            · exact Fin.ext hs.symm
+        · simp at hd
+      | none =>
+        simp only [hrest] at hd; simp at hd
+    · simp at hd
+  | [] => simp at hd
+  | [_] => simp at hd
+
+-- ============================================================
+-- Right roundtrip: packMutez ∘ unpackMutez = id
+-- ============================================================
+
+theorem packMutez_unpackMutez (bs : List (Fin 256)) (v : Nat)
+    (hd : unpackMutez bs = some v) :
+    packMutez v = bs := by
+  simp only [unpackMutez] at hd
+  match hun : unpackNat bs with
+  | some n =>
+    simp only [hun] at hd
+    split at hd
+    · rename_i hlt
+      simp only [Option.some.injEq] at hd; subst hd
+      exact packNat_unpackNat bs n hun
+    · simp at hd
+  | none => simp [hun] at hd
+
+-- ============================================================
+-- Right roundtrip: packTimestamp ∘ unpackTimestamp = id
+-- ============================================================
+
+theorem packTimestamp_unpackTimestamp (bs : List (Fin 256)) (v : Int)
+    (hd : unpackTimestamp bs = some v) :
+    packTimestamp v = bs := by
+  simp only [unpackTimestamp] at hd
+  match hun : unpackInt bs with
+  | some z =>
+    simp only [hun] at hd
+    split at hd
+    · rename_i hrange
+      simp only [Option.some.injEq] at hd; subst hd
+      exact packInt_unpackInt bs z hun
+    · simp at hd
+  | none => simp [hun] at hd
+
+-- ============================================================
+-- Right roundtrips: Or (Left/Right)
+-- ============================================================
+
+theorem packLeftV_unpackOrV (bs : List (Fin 256)) (a : List (Fin 256))
+    (hd : unpackOrV bs = some (true, a)) :
+    packLeftV a = bs := by
+  unfold unpackOrV at hd
+  match bs, hd with
+  | x :: y :: z :: rest, hd =>
+    simp only at hd
+    split at hd
+    · rename_i h05
+      obtain ⟨hx, hy, hz⟩ := h05
+      simp only [Option.some.injEq, Prod.mk.injEq] at hd
+      obtain ⟨_, ha⟩ := hd
+      subst ha
+      simp only [packLeftV, encodeLeftM, byte, List.cons_append, List.nil_append]
+      congr 1
+      · exact Fin.ext hx.symm
+      congr 1
+      · exact Fin.ext hy.symm
+      congr 1
+      · exact Fin.ext hz.symm
+    · split at hd
+      · simp at hd
+      · simp at hd
+  | [], hd => simp at hd
+  | [_], hd => simp at hd
+  | [_, _], hd => simp at hd
+
+theorem packRightV_unpackOrV (bs : List (Fin 256)) (b : List (Fin 256))
+    (hd : unpackOrV bs = some (false, b)) :
+    packRightV b = bs := by
+  unfold unpackOrV at hd
+  match bs, hd with
+  | x :: y :: z :: rest, hd =>
+    simp only at hd
+    split at hd
+    · simp at hd
+    · split at hd
+      · rename_i _ h08
+        obtain ⟨hx, hy, hz⟩ := h08
+        simp only [Option.some.injEq, Prod.mk.injEq] at hd
+        obtain ⟨_, hb⟩ := hd
+        subst hb
+        simp only [packRightV, encodeRightM, byte, List.cons_append, List.nil_append]
+        congr 1
+        · exact Fin.ext hx.symm
+        congr 1
+        · exact Fin.ext hy.symm
+        congr 1
+        · exact Fin.ext hz.symm
+      · simp at hd
+  | [], hd => simp at hd
+  | [_], hd => simp at hd
+  | [_, _], hd => simp at hd
+
+-- ============================================================
+-- Right roundtrips: Option (Some/None)
+-- ============================================================
+
+theorem packSomeV_unpackOptionV (bs : List (Fin 256)) (a : List (Fin 256))
+    (hd : unpackOptionV bs = some (true, a)) :
+    packSomeV a = bs := by
+  unfold unpackOptionV at hd
+  match bs, hd with
+  | x :: y :: z :: rest, hd =>
+    simp only at hd
+    split at hd
+    · rename_i h09
+      obtain ⟨hx, hy, hz⟩ := h09
+      simp only [Option.some.injEq, Prod.mk.injEq] at hd
+      obtain ⟨_, ha⟩ := hd
+      subst ha
+      simp only [packSomeV, encodeSomeM, byte, List.cons_append, List.nil_append]
+      congr 1
+      · exact Fin.ext hx.symm
+      congr 1
+      · exact Fin.ext hy.symm
+      congr 1
+      · exact Fin.ext hz.symm
+    · split at hd
+      · simp at hd
+      · simp at hd
+  | [], hd => simp at hd
+  | [_], hd => simp at hd
+  | [_, _], hd => simp at hd
+
+theorem packNoneV_unpackOptionV (bs : List (Fin 256))
+    (hd : unpackOptionV bs = some (false, [])) :
+    packNoneV = bs := by
+  unfold unpackOptionV at hd
+  match bs, hd with
+  | x :: y :: z :: rest, hd =>
+    simp only at hd
+    split at hd
+    · simp at hd
+    · split at hd
+      · rename_i _ h06
+        obtain ⟨hx, hy, hz, hnil⟩ := h06
+        subst hnil
+        -- Goal: packNoneV = [x, y, z]
+        simp only [packNoneV, encodeNoneM, byte, List.cons_append, List.nil_append]
+        congr 1
+        · exact Fin.ext hx.symm
+        congr 1
+        · exact Fin.ext hy.symm
+        congr 1
+        exact Fin.ext hz.symm
+      · simp at hd
+  | [], hd => simp at hd
+  | [_], hd => simp at hd
+  | [_, _], hd => simp at hd
+
+-- ============================================================
+-- Right roundtrip: packListV ∘ unpackListV = id (at binary level)
+-- ============================================================
+
+theorem packListV_unpackListV (bs : List (Fin 256)) (payload : List (Fin 256))
+    (hd : unpackListV bs = some payload) :
+    [byte 0x05, byte 0x02] ++ encodeUint32BE payload.length ++ payload = bs := by
+  simp only [unpackListV] at hd
+  match bs with
+  | first :: second :: b0 :: b1 :: b2 :: b3 :: rest =>
+    simp only at hd
+    split at hd
+    · rename_i h05
+      obtain ⟨hf, hs⟩ := h05
+      split at hd
+      · rename_i hlen
+        simp at hd; subst hd; rw [hlen]
+        rw [encodeUint32BE_decodeUint32BE b0 b1 b2 b3]
+        simp only [byte, List.cons_append, List.singleton_append, List.nil_append]
+        congr 1; · exact Fin.ext (by simp_all)
+        congr 1; · exact Fin.ext (by simp_all)
+      · simp at hd
+    · simp at hd
+  | [] => simp at hd
+  | [_] => simp at hd
+  | [_, _] => simp at hd
+  | [_, _, _] => simp at hd
+  | [_, _, _, _] => simp at hd
+  | [_, _, _, _, _] => simp at hd
+
+-- ============================================================
+-- Right roundtrips: bytes-based types delegate to packBytes_unpackBytes
+-- ============================================================
+
+theorem packAddress_unpackAddress (bs : List (Fin 256)) (data : List (Fin 256))
+    (hd : unpackAddress bs = some data) :
+    packAddress data = bs :=
+  packBytes_unpackBytes bs data hd
+
+theorem packKeyHash_unpackKeyHash (bs : List (Fin 256)) (data : List (Fin 256))
+    (hd : unpackKeyHash bs = some data) :
+    packKeyHash data = bs :=
+  packBytes_unpackBytes bs data hd
+
+theorem packKey_unpackKey (bs : List (Fin 256)) (data : List (Fin 256))
+    (hd : unpackKey bs = some data) :
+    packKey data = bs :=
+  packBytes_unpackBytes bs data hd
+
+theorem packSignature_unpackSignature (bs : List (Fin 256)) (data : List (Fin 256))
+    (hd : unpackSignature bs = some data) :
+    packSignature data = bs :=
+  packBytes_unpackBytes bs data hd
+
+theorem packChainId_unpackChainId (bs : List (Fin 256)) (data : List (Fin 256))
+    (hd : unpackChainId bs = some data) :
+    packChainId data = bs :=
+  packBytes_unpackBytes bs data hd
+
+-- ============================================================
+-- Left roundtrip: unpackPairV ∘ packPairV = id
+-- Requires showing michelineNodeSize correctly computes the size
+-- of the first child in a pair.
+-- ============================================================
+
+-- The pair left roundtrip requires that michelineNodeSize correctly
+-- computes the first child's size. We take this as a hypothesis.
+theorem unpackPairV_packPairV (a b : List (Fin 256))
+    (ha : michelineNodeSize (a ++ b) 0 = some a.length) :
+    unpackPairV (packPairV a b) = some (a, b) := by
+  simp only [packPairV, encodePairM, unpackPairV, byte]
+  simp only [List.cons_append, List.nil_append, fin_val_mk, and_self, ite_true]
+  rw [ha]
+  have hle : a.length ≤ (a ++ b).length := by simp
+  simp only [hle, ite_true, List.take_left, List.drop_left]
+
+-- ============================================================
+-- Right roundtrip: packPairV ∘ unpackPairV = id
+-- ============================================================
+
+theorem packPairV_unpackPairV (bs : List (Fin 256)) (a b : List (Fin 256))
+    (hd : unpackPairV bs = some (a, b)) :
+    packPairV a b = bs := by
+  simp only [unpackPairV] at hd
+  split at hd
+  · -- x :: y :: z :: rest
+    rename_i x y z rest
+    split at hd
+    · -- tags match
+      rename_i htags
+      obtain ⟨hx, hy, hz⟩ := htags
+      split at hd
+      · -- michelineNodeSize = some n
+        rename_i n
+        split at hd
+        · -- n ≤ rest.length
+          simp only [Option.some.injEq, Prod.mk.injEq] at hd
+          obtain ⟨rfl, rfl⟩ := hd
+          simp only [packPairV, encodePairM, byte, List.cons_append, List.nil_append,
+                     List.take_append_drop, fin_val_mk]
+          congr 1
+          · ext; simp [fin_val_mk]; omega
+          · congr 1
+            · ext; simp [fin_val_mk]; omega
+            · congr 1
+              · ext; simp [fin_val_mk]; omega
+        · simp at hd
+      · simp at hd
+    · simp at hd
+  · simp at hd
+
 end Micheline

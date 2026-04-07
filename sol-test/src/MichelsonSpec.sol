@@ -234,20 +234,11 @@ library MichelsonSpec {
     }
 
     function list(bytes[] memory items) internal pure returns (bytes memory) {
-        uint256 totalLen = 0;
+        bytes memory payload;
         for (uint256 i = 0; i < items.length; i++) {
-            totalLen = (totalLen + items[i].length);
+            payload = abi.encodePacked(payload, items[i]);
         }
-        bytes memory payload = new bytes(totalLen);
-        uint256 offset = 0;
-        for (uint256 i = 0; i < items.length; i++) {
-            uint256 itemLen = items[i].length;
-            for (uint256 j = 0; j < itemLen; j++) {
-                payload[(offset + j)] = items[i][j];
-            }
-            offset = (offset + itemLen);
-        }
-        return abi.encodePacked(hex"02", bytes4(uint32(totalLen)), payload);
+        return abi.encodePacked(hex"02", bytes4(uint32(payload.length)), payload);
     }
 
     function map(bytes[] memory elts) internal pure returns (bytes memory) {

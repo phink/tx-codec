@@ -323,6 +323,60 @@ contract GasBenchmark is Test {
         emit log_named_uint("packList({1,2,3}) asm", asm_);
     }
 
+    function test_gas_packList_1() public {
+        bytes[] memory items = new bytes[](1);
+        items[0] = MichelsonSpec.nat(42);
+        uint256 g = gasleft(); MichelsonSpec.pack(MichelsonSpec.list(items)); uint256 spec = g - gasleft();
+        g = gasleft(); Michelson.packList(items); uint256 asm_ = g - gasleft();
+        emit log_named_uint("packList(1 item) spec", spec);
+        emit log_named_uint("packList(1 item) asm", asm_);
+    }
+
+    function test_gas_packList_5() public {
+        bytes[] memory items = new bytes[](5);
+        for (uint i = 0; i < 5; i++) items[i] = MichelsonSpec.nat(i);
+        uint256 g = gasleft(); MichelsonSpec.pack(MichelsonSpec.list(items)); uint256 spec = g - gasleft();
+        g = gasleft(); Michelson.packList(items); uint256 asm_ = g - gasleft();
+        emit log_named_uint("packList(5 items) spec", spec);
+        emit log_named_uint("packList(5 items) asm", asm_);
+    }
+
+    function test_gas_packList_10() public {
+        bytes[] memory items = new bytes[](10);
+        for (uint i = 0; i < 10; i++) items[i] = MichelsonSpec.nat(i);
+        uint256 g = gasleft(); MichelsonSpec.pack(MichelsonSpec.list(items)); uint256 spec = g - gasleft();
+        g = gasleft(); Michelson.packList(items); uint256 asm_ = g - gasleft();
+        emit log_named_uint("packList(10 items) spec", spec);
+        emit log_named_uint("packList(10 items) asm", asm_);
+    }
+
+    function test_gas_packList_20() public {
+        bytes[] memory items = new bytes[](20);
+        for (uint i = 0; i < 20; i++) items[i] = MichelsonSpec.nat(i);
+        uint256 g = gasleft(); MichelsonSpec.pack(MichelsonSpec.list(items)); uint256 spec = g - gasleft();
+        g = gasleft(); Michelson.packList(items); uint256 asm_ = g - gasleft();
+        emit log_named_uint("packList(20 items) spec", spec);
+        emit log_named_uint("packList(20 items) asm", asm_);
+    }
+
+    function test_gas_packList_50() public {
+        bytes[] memory items = new bytes[](50);
+        for (uint i = 0; i < 50; i++) items[i] = MichelsonSpec.nat(i);
+        uint256 g = gasleft(); MichelsonSpec.pack(MichelsonSpec.list(items)); uint256 spec = g - gasleft();
+        g = gasleft(); Michelson.packList(items); uint256 asm_ = g - gasleft();
+        emit log_named_uint("packList(50 items) spec", spec);
+        emit log_named_uint("packList(50 items) asm", asm_);
+    }
+
+    function test_gas_packList_100() public {
+        bytes[] memory items = new bytes[](100);
+        for (uint i = 0; i < 100; i++) items[i] = MichelsonSpec.nat(i);
+        uint256 g = gasleft(); MichelsonSpec.pack(MichelsonSpec.list(items)); uint256 spec = g - gasleft();
+        g = gasleft(); Michelson.packList(items); uint256 asm_ = g - gasleft();
+        emit log_named_uint("packList(100 items) spec", spec);
+        emit log_named_uint("packList(100 items) asm", asm_);
+    }
+
     // ================================================================
     // BYTES
     // ================================================================

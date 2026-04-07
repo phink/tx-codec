@@ -1042,26 +1042,13 @@ def irListFn : SolFunc := {
   retType := "bytes memory"
   visibility := "internal"
   body := .seq [
-    -- Pass 1: compute total length
-    .letDecl "uint256" "totalLen" (.num 0),
+    .varDecl "bytes memory" "payload",
     .forLoop "i" "0" (.memberAccess (.var "items") "length") [
-      .assign "totalLen" (.binop "+" (.var "totalLen")
-        (.memberAccess (.arrayIndex (.var "items") (.var "i")) "length"))
-    ],
-    -- Pass 2: copy items into pre-allocated buffer
-    .letDecl "bytes memory" "payload" (.newBytes (.var "totalLen")),
-    .letDecl "uint256" "offset" (.num 0),
-    .forLoop "i" "0" (.memberAccess (.var "items") "length") [
-      .letDecl "uint256" "itemLen"
-        (.memberAccess (.arrayIndex (.var "items") (.var "i")) "length"),
-      .forLoop "j" "0" (.var "itemLen") [
-        .assignIndex (.var "payload") (.binop "+" (.var "offset") (.var "j"))
-          (.arrayIndex (.arrayIndex (.var "items") (.var "i")) (.var "j"))
-      ],
-      .assign "offset" (.binop "+" (.var "offset") (.var "itemLen"))
+      .assign "payload" (.encodePacked [.var "payload",
+        .arrayIndex (.var "items") (.var "i")])
     ],
     .ret (.encodePacked [.hexLit "02",
-      .castBytes4 (.var "totalLen"), .var "payload"])
+      .castBytes4 (.memberAccess (.var "payload") "length"), .var "payload"])
   ]
 }
 
