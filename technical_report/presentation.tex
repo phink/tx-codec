@@ -118,6 +118,12 @@ backed by \textbf{formal verification}.
   \draw[->, thick, orange] (asm) -- (tests);
 \end{tikzpicture}
 \end{center}
+
+\smallskip
+\begin{exampleblock}{Proven roundtrip for all 20 types (e.g.\ \texttt{nat})}
+$\forall\, n.\; \texttt{decode}(\texttt{encode}(n)) = n$ \quad\emph{and}\quad
+$\forall\, bs,\, n.\; \texttt{decode}(bs) = n \Rightarrow \texttt{encode}(n) = bs$
+\end{exampleblock}
 \end{frame}
 
 % ============================================================
@@ -455,6 +461,7 @@ This project is a \textbf{work in progress}. We are looking for feedback on:
 
 \textbf{What's next:}
 \begin{itemize}
+  \item Documentation
   \item End-to-end cross-runtime test on Tezos X testnet
   \item CI pipeline with automated verification
   \item Package distribution (Foundry registry)
@@ -462,11 +469,8 @@ This project is a \textbf{work in progress}. We are looking for feedback on:
 
 \bigskip
 \centering
-\large\textbf{Questions? Feedback?}
-
-\normalsize
-\bigskip
-\texttt{github.com/phink/tx-codec}
+\large\textbf{Questions? Feedback?}\\[0.3em]
+\normalsize\texttt{github.com/phink/tx-codec}
 \end{frame}
 
 \end{document}
