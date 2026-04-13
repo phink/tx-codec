@@ -53,10 +53,10 @@ contract AsmDiffHarness {
 
     // Assembly (optimized)
     function asmUnpackNat(bytes memory p) external pure returns (uint256) {
-        return Michelson.unpackNat(p);
+        return Michelson.toNat(Michelson.unpack(p));
     }
     function asmUnpackInt(bytes memory p) external pure returns (int256) {
-        return Michelson.unpackInt(p);
+        return Michelson.toInt(Michelson.unpack(p));
     }
     function asmPackToEVMNat(bytes memory p) external pure returns (bytes32) {
         return Michelson.packToEVMNat(p);
@@ -65,40 +65,40 @@ contract AsmDiffHarness {
         return Michelson.packToEVMInt(p);
     }
     function asmPackNat(uint256 n) external pure returns (bytes memory) {
-        return Michelson.packNat(n);
+        return Michelson.pack(Michelson.nat(n));
     }
     function asmPackInt(int256 v) external pure returns (bytes memory) {
-        return Michelson.packInt(v);
+        return Michelson.pack(Michelson.int_(v));
     }
     function asmPackBool(bool v) external pure returns (bytes memory) {
-        return Michelson.packBool(v);
+        return Michelson.pack(Michelson.bool_(v));
     }
     function asmUnpackBool(bytes memory p) external pure returns (bool) {
-        return Michelson.unpackBool(p);
+        return Michelson.toBool(Michelson.unpack(p));
     }
     function asmPackUnit() external pure returns (bytes memory) {
-        return Michelson.packUnit();
+        return Michelson.pack(Michelson.unit_());
     }
     function asmUnpackUnit(bytes memory p) external pure {
-        Michelson.unpackUnit(p);
+        Michelson.toUnit(Michelson.unpack(p));
     }
     function asmPackString(string memory s) external pure returns (bytes memory) {
-        return Michelson.packString(s);
+        return Michelson.pack(Michelson.string_(s));
     }
     function asmUnpackString(bytes memory p) external pure returns (string memory) {
-        return Michelson.unpackString(p);
+        return Michelson.toString(Michelson.unpack(p));
     }
     function asmPackMutez(uint64 v) external pure returns (bytes memory) {
-        return Michelson.packMutez(v);
+        return Michelson.pack(Michelson.nat(uint256(v)));
     }
     function asmUnpackMutez(bytes memory p) external pure returns (uint64) {
-        return Michelson.unpackMutez(p);
+        return Michelson.toMutez(Michelson.unpack(p));
     }
     function asmPackTimestamp(int64 v) external pure returns (bytes memory) {
-        return Michelson.packTimestamp(v);
+        return Michelson.pack(Michelson.int_(int256(v)));
     }
     function asmUnpackTimestamp(bytes memory p) external pure returns (int64) {
-        return Michelson.unpackTimestamp(p);
+        return Michelson.toTimestamp(Michelson.unpack(p));
     }
 
     // Bytes-node types: spec
@@ -118,20 +118,20 @@ contract AsmDiffHarness {
     function specUnpackContract(bytes memory p) external pure returns (bytes memory) { return MichelsonSpec.toBytes(MichelsonSpec.unpack(p)); }
 
     // Bytes-node types: asm
-    function asmPackBytes(bytes memory data) external pure returns (bytes memory) { return Michelson.packBytes(data); }
-    function asmUnpackBytes(bytes memory p) external pure returns (bytes memory) { return Michelson.unpackBytes(p); }
-    function asmPackAddress(bytes memory addr) external pure returns (bytes memory) { return Michelson.packAddress(addr); }
-    function asmUnpackAddress(bytes memory p) external pure returns (bytes memory) { return Michelson.unpackAddress(p); }
-    function asmPackKeyHash(bytes memory kh) external pure returns (bytes memory) { return Michelson.packKeyHash(kh); }
-    function asmUnpackKeyHash(bytes memory p) external pure returns (bytes memory) { return Michelson.unpackKeyHash(p); }
-    function asmPackKey(bytes memory k) external pure returns (bytes memory) { return Michelson.packKey(k); }
-    function asmUnpackKey(bytes memory p) external pure returns (bytes memory) { return Michelson.unpackKey(p); }
-    function asmPackSignature(bytes memory sig) external pure returns (bytes memory) { return Michelson.packSignature(sig); }
-    function asmUnpackSignature(bytes memory p) external pure returns (bytes memory) { return Michelson.unpackSignature(p); }
-    function asmPackChainId(bytes memory cid) external pure returns (bytes memory) { return Michelson.packChainId(cid); }
-    function asmUnpackChainId(bytes memory p) external pure returns (bytes memory) { return Michelson.unpackChainId(p); }
-    function asmPackContract(bytes memory data) external pure returns (bytes memory) { return Michelson.packContract(data); }
-    function asmUnpackContract(bytes memory p) external pure returns (bytes memory) { return Michelson.unpackContract(p); }
+    function asmPackBytes(bytes memory data) external pure returns (bytes memory) { return Michelson.pack(Michelson.bytes_(data)); }
+    function asmUnpackBytes(bytes memory p) external pure returns (bytes memory) { return Michelson.toBytes(Michelson.unpack(p)); }
+    function asmPackAddress(bytes memory addr) external pure returns (bytes memory) { return Michelson.pack(Michelson.address_(addr)); }
+    function asmUnpackAddress(bytes memory p) external pure returns (bytes memory) { return Michelson.toAddress(Michelson.unpack(p)); }
+    function asmPackKeyHash(bytes memory kh) external pure returns (bytes memory) { return Michelson.pack(Michelson.keyHash(kh)); }
+    function asmUnpackKeyHash(bytes memory p) external pure returns (bytes memory) { return Michelson.toKeyHash(Michelson.unpack(p)); }
+    function asmPackKey(bytes memory k) external pure returns (bytes memory) { return Michelson.pack(Michelson.key(k)); }
+    function asmUnpackKey(bytes memory p) external pure returns (bytes memory) { return Michelson.toKey(Michelson.unpack(p)); }
+    function asmPackSignature(bytes memory sig) external pure returns (bytes memory) { return Michelson.pack(Michelson.signature_(sig)); }
+    function asmUnpackSignature(bytes memory p) external pure returns (bytes memory) { return Michelson.toSignature(Michelson.unpack(p)); }
+    function asmPackChainId(bytes memory cid) external pure returns (bytes memory) { return Michelson.pack(Michelson.chainId(cid)); }
+    function asmUnpackChainId(bytes memory p) external pure returns (bytes memory) { return Michelson.toChainId(Michelson.unpack(p)); }
+    function asmPackContract(bytes memory data) external pure returns (bytes memory) { return Michelson.pack(Michelson.contract_(data)); }
+    function asmUnpackContract(bytes memory p) external pure returns (bytes memory) { return Michelson.toContract(Michelson.unpack(p)); }
 
     // Map/Set: spec
     function specElt(bytes memory k, bytes memory v) external pure returns (bytes memory) { return MichelsonSpec.elt(k, v); }
@@ -142,10 +142,10 @@ contract AsmDiffHarness {
 
     // Map/Set: asm
     function asmElt(bytes memory k, bytes memory v) external pure returns (bytes memory) { return Michelson.elt(k, v); }
-    function asmPackMap(bytes[] memory elts) external pure returns (bytes memory) { return Michelson.packMap(elts); }
-    function asmUnpackMap(bytes memory p) external pure returns (bytes[] memory) { return Michelson.unpackMap(p); }
-    function asmPackSet(bytes[] memory items) external pure returns (bytes memory) { return Michelson.packSet(items); }
-    function asmUnpackSet(bytes memory p) external pure returns (bytes[] memory) { return Michelson.unpackSet(p); }
+    function asmPackMap(bytes[] memory elts) external pure returns (bytes memory) { return Michelson.pack(Michelson.map(elts)); }
+    function asmUnpackMap(bytes memory p) external pure returns (bytes[] memory) { return Michelson.toMap(Michelson.unpack(p)); }
+    function asmPackSet(bytes[] memory items) external pure returns (bytes memory) { return Michelson.pack(Michelson.set(items)); }
+    function asmUnpackSet(bytes memory p) external pure returns (bytes[] memory) { return Michelson.toSet(Michelson.unpack(p)); }
 
     // Composite: spec
     function specPair(bytes memory a, bytes memory b) external pure returns (bytes memory) { return MichelsonSpec.pair(a, b); }
@@ -172,16 +172,16 @@ contract AsmDiffHarness {
     function asmSome(bytes memory a) external pure returns (bytes memory) { return Michelson.some(a); }
     function asmNone() external pure returns (bytes memory) { return Michelson.none(); }
     function asmList(bytes[] memory items) external pure returns (bytes memory) { return Michelson.list(items); }
-    function asmPackPair(bytes memory a, bytes memory b) external pure returns (bytes memory) { return Michelson.packPair(a, b); }
-    function asmPackLeft(bytes memory a) external pure returns (bytes memory) { return Michelson.packLeft(a); }
-    function asmPackRight(bytes memory b) external pure returns (bytes memory) { return Michelson.packRight(b); }
-    function asmPackSome(bytes memory a) external pure returns (bytes memory) { return Michelson.packSome(a); }
-    function asmPackNone() external pure returns (bytes memory) { return Michelson.packNone(); }
-    function asmPackList(bytes[] memory items) external pure returns (bytes memory) { return Michelson.packList(items); }
-    function asmUnpackPair(bytes memory p) external pure returns (bytes memory, bytes memory) { return Michelson.unpackPair(p); }
-    function asmUnpackOr(bytes memory p) external pure returns (bool, bytes memory) { return Michelson.unpackOr(p); }
-    function asmUnpackOption(bytes memory p) external pure returns (bool, bytes memory) { return Michelson.unpackOption(p); }
-    function asmUnpackList(bytes memory p) external pure returns (bytes[] memory) { return Michelson.unpackList(p); }
+    function asmPackPair(bytes memory a, bytes memory b) external pure returns (bytes memory) { return Michelson.pack(Michelson.pair(a, b)); }
+    function asmPackLeft(bytes memory a) external pure returns (bytes memory) { return Michelson.pack(Michelson.left(a)); }
+    function asmPackRight(bytes memory b) external pure returns (bytes memory) { return Michelson.pack(Michelson.right(b)); }
+    function asmPackSome(bytes memory a) external pure returns (bytes memory) { return Michelson.pack(Michelson.some(a)); }
+    function asmPackNone() external pure returns (bytes memory) { return Michelson.pack(Michelson.none()); }
+    function asmPackList(bytes[] memory items) external pure returns (bytes memory) { return Michelson.pack(Michelson.list(items)); }
+    function asmUnpackPair(bytes memory p) external pure returns (bytes memory, bytes memory) { return Michelson.toPair(Michelson.unpack(p)); }
+    function asmUnpackOr(bytes memory p) external pure returns (bool, bytes memory) { return Michelson.toOr(Michelson.unpack(p)); }
+    function asmUnpackOption(bytes memory p) external pure returns (bool, bytes memory) { return Michelson.toOption(Michelson.unpack(p)); }
+    function asmUnpackList(bytes memory p) external pure returns (bytes[] memory) { return Michelson.toList(Michelson.unpack(p)); }
 }
 
 // ================================================================

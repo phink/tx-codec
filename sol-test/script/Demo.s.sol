@@ -22,7 +22,7 @@ contract MichelsonDemo {
     /// @notice Same with assembly decoder -- compare gas.
     function demoNatAsm(uint256 n) external returns (bytes memory packed, uint256 decoded) {
         packed = MichelsonSpec.pack(MichelsonSpec.nat(n));
-        decoded = Michelson.unpackNat(packed);
+        decoded = Michelson.toNat(Michelson.unpack(packed));
         require(decoded == n, "nat asm roundtrip failed");
         emit Packed("nat_asm", packed);
     }

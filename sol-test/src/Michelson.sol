@@ -1,62 +1,78 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import "./MichelsonSpec.sol";
-
 /// @notice Assembly-optimized Michelson PACK encoders/decoders.
 /// @dev Must produce identical results to MichelsonSpec (the IR-generated spec).
 ///      Differential fuzz tests enforce equivalence (96 asm-diff + 330 total).
 ///      Each public function is a single monolithic assembly block with comments
 ///      marking correspondence to the IR-generated MichelsonSpec functions.
 ///      MichelsonSpec is fully generated from the SolStmt IR transpiler (all 52 functions).
+///
+///      API: combinator style only.
+///        Encoders build inner Micheline (no 0x05): nat(), int_(), bool_(), ...
+///        Decoders read inner Micheline (no 0x05):  toNat(), toInt(), toBool(), ...
+///        pack()/unpack() handle the 0x05 version byte.
+///        Usage: pack(nat(42)), toNat(unpack(packed))
 library Michelson {
 
     // ================================================================
-    // Public decoders (monolithic inline assembly)
+    // Error declarations (needed by inlined Solidity functions below)
     // ================================================================
 
-    /// @notice Decode Michelson PACK bytes to uint256 using assembly.
-    function unpackNat(bytes memory packed) internal pure returns (uint256 value) {
-        assembly {
-            let len := mload(packed)
-            let ptr := add(packed, 32)
+    error InvalidVersionByte(uint8 got);
+    error UnexpectedNodeTag(uint8 expected, uint8 got);
+    error IntOverflow();
+    error InputTruncated();
+    error TrailingBytes(uint256 consumed, uint256 total);
 
-            // -- Corresponds to MichelsonSpec.unpack (version byte 0x05 check)
-            //    + MichelsonSpec.toNat (node tag 0x00 check, length >= 2)
-            //    IR structure: unpack checks packed.length < 1 and packed[0] != 0x05;
-            //    toNat checks micheline.length < 2 and micheline[0] != 0x00.
-            //    Combined here: packed needs >= 3 bytes (0x05 + 0x00 + >=1 zarith byte).
-            if lt(len, 3) {
+    // ================================================================
+    // 0x05 handling: pack / unpack
+    // ================================================================
+
+    // -- Corresponds to MichelsonSpec.pack --
+    function pack(bytes memory micheline) internal pure returns (bytes memory) {
+        return abi.encodePacked(hex"05", micheline);
+    }
+
+    // -- Corresponds to MichelsonSpec.unpack --
+    function unpack(bytes memory packed) internal pure returns (bytes memory) {
+        if ((packed.length < 1)) {
+            revert InputTruncated();
+        }
+        if ((uint8(packed[0]) != 0x05)) {
+            revert InvalidVersionByte(uint8(packed[0]));
+        }
+        return _slice(packed, 1, (packed.length - 1));
+    }
+
+    // ================================================================
+    // Decoders (read inner Micheline, no 0x05)
+    // ================================================================
+
+    /// @notice Decode Micheline bytes to uint256 using assembly.
+    /// @dev Expects raw Micheline (after unpack), not PACK bytes.
+    function toNat(bytes memory micheline) internal pure returns (uint256 value) {
+        assembly {
+            let len := mload(micheline)
+            let ptr := add(micheline, 32)
+
+            // -- Corresponds to MichelsonSpec.toNat (node tag 0x00 check, length >= 2)
+            //    micheline needs >= 2 bytes (0x00 + >=1 zarith byte).
+            if lt(len, 2) {
                 mstore(0, shl(224, 0x79fdd2ae)) // InputTruncated()
                 revert(0, 4)
             }
             let hdr := mload(ptr)
             let b0 := byte(0, hdr)
-            if iszero(eq(b0, 0x05)) {
-                mstore(0, shl(224, 0xe51a2409)) // InvalidVersionByte(uint8)
-                mstore(4, b0)
-                revert(0, 36)
-            }
-            let b1 := byte(1, hdr)
-            if iszero(eq(b1, 0x00)) {
+            if iszero(eq(b0, 0x00)) {
                 mstore(0, shl(224, 0x1dd0dc36)) // UnexpectedNodeTag(uint8,uint8)
                 mstore(4, 0x00)
-                mstore(36, b1)
+                mstore(36, b0)
                 revert(0, 68)
             }
 
             // -- Corresponds to MichelsonSpec._decodeZarithNat(micheline, 1) --
-            // IR structure (nested if/else):
-            //   if offset < data.length -> read first = uint8(data[offset])
-            //     if first >= 128:
-            //       if first >= 192: revert NatNegative()
-            //       else: (first % 64 + tailValue, tailNewOff) via _decodeZarithTail
-            //     else (first < 128):
-            //       if first >= 64: revert NatNegative()
-            //       else: return (first, offset + 1)
-            //   else: revert InputTruncated()
-            // Assembly flattens this into switch/if chains on first's range.
-            let offset := 2
+            let offset := 1
             let remaining := sub(len, offset)
             if lt(remaining, 1) {
                 mstore(0, shl(224, 0x79fdd2ae)) // InputTruncated
@@ -68,7 +84,7 @@ library Michelson {
 
             switch lt(first, 64)
             case 1 {
-                // first < 64: single byte positive — spec returns (first, offset + 1)
+                // first < 64: single byte positive -- spec returns (first, offset + 1)
                 value := first
                 newOffset := add(offset, 1)
             }
@@ -89,10 +105,6 @@ library Michelson {
                     }
 
                     // -- Corresponds to MichelsonSpec._decodeZarithTail(data, offset+1, 6) --
-                    // IR structure (recursive, unrolled here as a loop):
-                    //   if b >= 128: accumulate (b % 128) << shift, recurse with shift+7
-                    //   else if b == 0: revert TrailingZeroByte()
-                    //   else: terminal byte, return (b << shift, offset+1)
                     let tailOffset := add(offset, 1)
                     let shift := 6
 
@@ -138,13 +150,11 @@ library Michelson {
                     }
 
                     // spec: return ((first % 64) + tv, newOff)
-                    // first & 0x3f == first % 64
                     value := add(and(first, 0x3f), tailValue)
                 }
             }
 
             // -- Corresponds to MichelsonSpec.toNat: trailing bytes check --
-            // IR: if (consumed != micheline.length) revert TrailingBytes(consumed, micheline.length)
             if iszero(eq(newOffset, len)) {
                 mstore(0, shl(224, 0xc3e44a73)) // TrailingBytes(uint256,uint256)
                 mstore(4, newOffset)
@@ -154,48 +164,29 @@ library Michelson {
         }
     }
 
-    /// @notice Decode Michelson PACK bytes to int256 using assembly.
-    function unpackInt(bytes memory packed) internal pure returns (int256 value) {
+    /// @notice Decode Micheline bytes to int256 using assembly.
+    /// @dev Expects raw Micheline (after unpack), not PACK bytes.
+    function toInt(bytes memory micheline) internal pure returns (int256 value) {
         assembly {
-            let len := mload(packed)
-            let ptr := add(packed, 32)
+            let len := mload(micheline)
+            let ptr := add(micheline, 32)
 
-            // -- Corresponds to MichelsonSpec.unpack (version byte 0x05 check)
-            //    + MichelsonSpec.toInt (node tag 0x00 check, length >= 2)
-            //    IR structure: same header validation as toNat (see above).
-            if lt(len, 3) {
+            // -- Corresponds to MichelsonSpec.toInt (node tag 0x00 check, length >= 2)
+            if lt(len, 2) {
                 mstore(0, shl(224, 0x79fdd2ae)) // InputTruncated()
                 revert(0, 4)
             }
             let hdr := mload(ptr)
             let b0 := byte(0, hdr)
-            if iszero(eq(b0, 0x05)) {
-                mstore(0, shl(224, 0xe51a2409)) // InvalidVersionByte(uint8)
-                mstore(4, b0)
-                revert(0, 36)
-            }
-            let b1 := byte(1, hdr)
-            if iszero(eq(b1, 0x00)) {
+            if iszero(eq(b0, 0x00)) {
                 mstore(0, shl(224, 0x1dd0dc36)) // UnexpectedNodeTag(uint8,uint8)
                 mstore(4, 0x00)
-                mstore(36, b1)
+                mstore(36, b0)
                 revert(0, 68)
             }
 
             // -- Corresponds to MichelsonSpec._decodeZarithInt(micheline, 1) --
-            // IR structure (nested if/else):
-            //   if first < 64: return (int256(first), offset+1)                    [positive single]
-            //   else if first < 128:
-            //     if first == 64: revert NegativeZero()
-            //     else: return (-(int256(first - 64)), offset+1)                   [negative single]
-            //   else if first < 192:
-            //     (tv, newOff) = _decodeZarithTail(..., 6)
-            //     return (int256(first%64 + tv), newOff)                            [positive multi]
-            //   else:
-            //     (tv, newOff) = _decodeZarithTail(..., 6)
-            //     return (-(int256(first%64 + tv)), newOff)                         [negative multi]
-            // Assembly flattens into switch/if chains.
-            let offset := 2
+            let offset := 1
             let remaining := sub(len, offset)
             if lt(remaining, 1) {
                 mstore(0, shl(224, 0x79fdd2ae)) // InputTruncated
@@ -207,7 +198,7 @@ library Michelson {
 
             switch lt(first, 64)
             case 1 {
-                // first < 64: positive single-byte — spec: int256(first)
+                // first < 64: positive single-byte -- spec: int256(first)
                 value := first
                 newOffset := add(offset, 1)
             }
@@ -215,7 +206,6 @@ library Michelson {
                 switch lt(first, 128)
                 case 1 {
                     // 64 <= first < 128: negative single-byte
-                    // spec: if first == 64 revert NegativeZero(); else -(int256(first - 64))
                     if eq(first, 64) {
                         mstore(0, shl(224, 0x7c1f7fe8)) // NegativeZero
                         revert(0, 4)
@@ -225,12 +215,10 @@ library Michelson {
                 }
                 default {
                     // first >= 128: multi-byte
-                    // spec: first < 192 -> positive, first >= 192 -> negative
                     let negative := gt(first, 191)
                     let low6 := and(first, 0x3f)
 
                     // -- Corresponds to MichelsonSpec._decodeZarithTail(data, offset+1, 6) --
-                    // IR structure: same recursive tail decoder as in _decodeZarithNat path
                     let tailOffset := add(offset, 1)
                     let shift := 6
 
@@ -275,12 +263,9 @@ library Michelson {
                         revert(0, 4)
                     }
 
-                    // spec: (first % 64) + tv — same as (first & 0x3f) + tailValue
                     let absValue := add(low6, tailValue)
 
                     // -- Corresponds to MichelsonSpec._decodeZarithInt: sign handling --
-                    // IR: first < 192 -> return int256(absValue)
-                    //     first >= 192 -> return -(int256(absValue))
                     switch negative
                     case 1 {
                         if gt(absValue, shl(255, 1)) {
@@ -300,7 +285,6 @@ library Michelson {
             }
 
             // -- Corresponds to MichelsonSpec.toInt: trailing bytes check --
-            // IR: if (consumed != micheline.length) revert TrailingBytes(consumed, micheline.length)
             if iszero(eq(newOffset, len)) {
                 mstore(0, shl(224, 0xc3e44a73)) // TrailingBytes(uint256,uint256)
                 mstore(4, newOffset)
@@ -310,57 +294,312 @@ library Michelson {
         }
     }
 
-    // ================================================================
-    // Optimized packToEVMNat / packToEVMInt / packToEVMBool
-    // ================================================================
-
-    function packToEVMNat(bytes memory packed) internal pure returns (bytes32) {
-        return bytes32(unpackNat(packed));
+    /// @notice Decode Micheline bytes to bool using assembly.
+    function toBool(bytes memory micheline) internal pure returns (bool result) {
+        assembly {
+            let len := mload(micheline)
+            if iszero(eq(len, 2)) {
+                mstore(0, shl(224, 0x79fdd2ae)) // InputTruncated()
+                revert(0, 4)
+            }
+            let hdr := mload(add(micheline, 32))
+            let b0 := byte(0, hdr)
+            let b1 := byte(1, hdr)
+            if iszero(eq(b0, 0x03)) {
+                mstore(0, shl(224, 0x1dd0dc36)) // UnexpectedNodeTag(uint8,uint8)
+                mstore(4, 0x03)
+                mstore(36, b0)
+                revert(0, 68)
+            }
+            switch b1
+            case 0x0A { result := 1 }
+            case 0x03 { result := 0 }
+            default {
+                mstore(0, shl(224, 0xb8ff4ada)) // InvalidBoolTag(uint8)
+                mstore(4, b1)
+                revert(0, 36)
+            }
+        }
     }
 
-    function packToEVMInt(bytes memory packed) internal pure returns (bytes32) {
-        return bytes32(uint256(unpackInt(packed)));
+    /// @notice Decode Micheline bytes as unit using assembly.
+    function toUnit(bytes memory micheline) internal pure {
+        assembly {
+            let len := mload(micheline)
+            if iszero(eq(len, 2)) {
+                mstore(0, shl(224, 0x79fdd2ae)) // InputTruncated()
+                revert(0, 4)
+            }
+            let hdr := mload(add(micheline, 32))
+            if iszero(eq(byte(0, hdr), 0x03)) {
+                mstore(0, shl(224, 0x1dd0dc36)) // UnexpectedNodeTag(uint8,uint8)
+                mstore(4, 0x03)
+                mstore(36, byte(0, hdr))
+                revert(0, 68)
+            }
+            if iszero(eq(byte(1, hdr), 0x0B)) {
+                mstore(0, shl(224, 0x1dd0dc36)) // UnexpectedNodeTag(uint8,uint8)
+                mstore(4, 0x0B)
+                mstore(36, byte(1, hdr))
+                revert(0, 68)
+            }
+        }
+    }
+
+    /// @notice Decode Micheline bytes to string using assembly.
+    function toString(bytes memory micheline) internal pure returns (string memory result) {
+        assembly {
+            let pLen := mload(micheline)
+            let pPtr := add(micheline, 32)
+
+            // Minimum: 1 (tag) + 4 (length) = 5
+            if lt(pLen, 5) {
+                mstore(0, shl(224, 0x79fdd2ae)) // InputTruncated()
+                revert(0, 4)
+            }
+
+            let hdr := mload(pPtr)
+
+            // Check node tag 0x01 (string)
+            if iszero(eq(byte(0, hdr), 0x01)) {
+                mstore(0, shl(224, 0x1dd0dc36)) // UnexpectedNodeTag(uint8,uint8)
+                mstore(4, 0x01)
+                mstore(36, byte(0, hdr))
+                revert(0, 68)
+            }
+
+            // Read big-endian uint32 length from bytes 1..4
+            let sLen := or(or(or(
+                shl(24, byte(1, hdr)),
+                shl(16, byte(2, hdr))),
+                shl(8, byte(3, hdr))),
+                byte(4, hdr))
+
+            // Validate total length
+            if iszero(eq(pLen, add(5, sLen))) {
+                mstore(0, shl(224, 0xc3e44a73)) // TrailingBytes(uint256,uint256)
+                mstore(4, add(5, sLen))
+                mstore(36, pLen)
+                revert(0, 68)
+            }
+
+            // Allocate result string
+            result := mload(0x40)
+            mstore(result, sLen) // set string length
+            let dst := add(result, 32)
+            let src := add(pPtr, 5)
+            let remaining := sLen
+
+            // Word-sized copy
+            for {} gt(remaining, 31) {} {
+                mstore(dst, mload(src))
+                dst := add(dst, 32)
+                src := add(src, 32)
+                remaining := sub(remaining, 32)
+            }
+            // Copy remaining bytes
+            if gt(remaining, 0) {
+                let mask := sub(shl(mul(sub(32, remaining), 8), 1), 1)
+                let srcWord := mload(src)
+                let dstWord := mload(dst)
+                mstore(dst, or(and(srcWord, not(mask)), and(dstWord, mask)))
+            }
+
+            // Update free memory pointer
+            mstore(0x40, and(add(add(add(result, 32), sLen), 31), not(31)))
+        }
+    }
+
+    // -- Corresponds to MichelsonSpec.toBytes --
+    function toBytes(bytes memory micheline) internal pure returns (bytes memory) {
+        if ((micheline.length < 5)) {
+            revert InputTruncated();
+        }
+        if ((uint8(micheline[0]) != 0x0A)) {
+            revert UnexpectedNodeTag(0x0A, uint8(micheline[0]));
+        }
+        uint256 len = uint256(uint8(micheline[1])) << 24
+                    | uint256(uint8(micheline[2])) << 16
+                    | uint256(uint8(micheline[3])) << 8
+                    | uint256(uint8(micheline[4]));
+        if ((micheline.length != (5 + len))) {
+            revert TrailingBytes((5 + len), micheline.length);
+        }
+        return _slice(micheline, 5, len);
+    }
+
+    // -- Corresponds to MichelsonSpec.toMutez --
+    function toMutez(bytes memory micheline) internal pure returns (uint64) {
+        uint256 val = toNat(micheline);
+        assembly {
+            // mutez is bounded to 0 .. 2^63 - 1
+            if gt(val, 9223372036854775807) {
+                mstore(0, shl(224, 0x44dddea2)) // IntOverflow()
+                revert(0, 4)
+            }
+        }
+        return uint64(val);
+    }
+
+    // -- Corresponds to MichelsonSpec.toTimestamp --
+    function toTimestamp(bytes memory micheline) internal pure returns (int64) {
+        int256 val = toInt(micheline);
+        assembly {
+            // timestamp is bounded to -2^63 .. 2^63 - 1
+            if or(slt(val, sub(0, 9223372036854775808)), sgt(val, 9223372036854775807)) {
+                mstore(0, shl(224, 0x44dddea2)) // IntOverflow()
+                revert(0, 4)
+            }
+        }
+        return int64(val);
+    }
+
+    // -- Corresponds to MichelsonSpec.toPair --
+    function toPair(bytes memory micheline) internal pure returns (bytes memory a, bytes memory b) {
+        if ((micheline.length < 3)) {
+            revert InputTruncated();
+        }
+        if ((uint8(micheline[0]) != 0x07)) {
+            revert UnexpectedNodeTag(0x07, uint8(micheline[0]));
+        }
+        if ((uint8(micheline[1]) != 0x07)) {
+            revert UnexpectedNodeTag(0x07, uint8(micheline[1]));
+        }
+        uint256 child1Size = _michelineNodeSize(micheline, 2, 0);
+        a = _slice(micheline, 2, child1Size);
+        b = _slice(micheline, (2 + child1Size), ((micheline.length - 2) - child1Size));
+    }
+
+    // -- Corresponds to MichelsonSpec.toOr --
+    function toOr(bytes memory micheline) internal pure returns (bool isLeft, bytes memory value) {
+        if ((micheline.length < 3)) {
+            revert InputTruncated();
+        }
+        if ((uint8(micheline[0]) != 0x05)) {
+            revert UnexpectedNodeTag(0x05, uint8(micheline[0]));
+        }
+        uint8 primTag = uint8(micheline[1]);
+        if ((primTag == 0x05)) {
+            isLeft = true;
+        } else if ((primTag == 0x08)) {
+            isLeft = false;
+        } else revert UnexpectedNodeTag(0x05, primTag);
+        value = _slice(micheline, 2, (micheline.length - 2));
+    }
+
+    // -- Corresponds to MichelsonSpec.toOption --
+    function toOption(bytes memory micheline) internal pure returns (bool isSome, bytes memory value) {
+        if ((micheline.length < 2)) {
+            revert InputTruncated();
+        }
+        uint8 nodeTag = uint8(micheline[0]);
+        if ((nodeTag == 0x05)) {
+            if ((micheline.length < 3)) {
+                revert InputTruncated();
+            }
+            if ((uint8(micheline[1]) != 0x09)) {
+                revert UnexpectedNodeTag(0x09, uint8(micheline[1]));
+            }
+            isSome = true;
+            value = _slice(micheline, 2, (micheline.length - 2));
+        } else if ((nodeTag == 0x03)) {
+            if ((uint8(micheline[1]) != 0x06)) {
+                revert UnexpectedNodeTag(0x06, uint8(micheline[1]));
+            }
+            isSome = false;
+            value = new bytes(0);
+        } else revert UnexpectedNodeTag(0x05, nodeTag);
+    }
+
+    // -- Corresponds to MichelsonSpec.toList --
+    function toList(bytes memory micheline) internal pure returns (bytes[] memory items) {
+        bytes memory payload = _toListPayload(micheline);
+        uint256 count = 0;
+        uint256 offset = 0;
+        while ((offset < payload.length)) {
+            offset = (offset + _michelineNodeSize(payload, offset, 0));
+            count = (count + 1);
+        }
+        items = new bytes[](count);
+        offset = 0;
+        for (uint256 i = 0; i < count; i++) {
+            uint256 size = _michelineNodeSize(payload, offset, 0);
+            items[i] = _slice(payload, offset, size);
+            offset = (offset + size);
+        }
+    }
+
+    // -- Corresponds to MichelsonSpec.toMap (same as toList) --
+    function toMap(bytes memory micheline) internal pure returns (bytes[] memory) {
+        return toList(micheline);
+    }
+
+    // -- Corresponds to MichelsonSpec.toSet (same as toList) --
+    function toSet(bytes memory micheline) internal pure returns (bytes[] memory) {
+        return toList(micheline);
+    }
+
+    // -- Corresponds to MichelsonSpec.toAddress (same as toBytes) --
+    function toAddress(bytes memory micheline) internal pure returns (bytes memory) {
+        return toBytes(micheline);
+    }
+
+    // -- Corresponds to MichelsonSpec.toKeyHash (same as toBytes) --
+    function toKeyHash(bytes memory micheline) internal pure returns (bytes memory) {
+        return toBytes(micheline);
+    }
+
+    // -- Corresponds to MichelsonSpec.toKey (same as toBytes) --
+    function toKey(bytes memory micheline) internal pure returns (bytes memory) {
+        return toBytes(micheline);
+    }
+
+    // -- Corresponds to MichelsonSpec.toSignature (same as toBytes) --
+    function toSignature(bytes memory micheline) internal pure returns (bytes memory) {
+        return toBytes(micheline);
+    }
+
+    // -- Corresponds to MichelsonSpec.toChainId (same as toBytes) --
+    function toChainId(bytes memory micheline) internal pure returns (bytes memory) {
+        return toBytes(micheline);
+    }
+
+    // -- Corresponds to MichelsonSpec.toContract (same as toBytes) --
+    function toContract(bytes memory micheline) internal pure returns (bytes memory) {
+        return toBytes(micheline);
     }
 
     // ================================================================
-    // Public encoders (monolithic inline assembly)
+    // Encoders (build inner Micheline, no 0x05)
     // ================================================================
 
-    /// @notice Encode uint256 as Michelson PACK bytes using assembly.
-    function packNat(uint256 n) internal pure returns (bytes memory result) {
+    /// @notice Encode uint256 as Micheline bytes (0x00 tag + zarith) using assembly.
+    function nat(uint256 n) internal pure returns (bytes memory result) {
         assembly {
             result := mload(0x40)
             let ptr := add(result, 32)
 
-            // -- Corresponds to MichelsonSpec.pack(MichelsonSpec.nat(n)) --
-            // IR: pack prepends 0x05; nat prepends 0x00 tag
-            mstore8(ptr, 0x05)
-            mstore8(add(ptr, 1), 0x00)
-            let len := 2
+            // -- Corresponds to MichelsonSpec.nat(n) --
+            // Micheline: 0x00 tag
+            mstore8(ptr, 0x00)
+            let len := 1
 
             // -- Corresponds to MichelsonSpec._encodeZarithNat(n) --
-            // IR: low6 = n % 64, rest = n / 64
-            //   if rest >= 1: uint8(low6 + 128) ++ _encodeZarithTail(rest)
-            //   else: uint8(low6)
             let low6 := mod(n, 64)
             let rest := div(n, 64)
 
             switch rest
             case 0 {
-                // rest == 0: single byte — spec: uint8(low6)
+                // rest == 0: single byte -- spec: uint8(low6)
                 mstore8(add(ptr, len), low6)
                 len := add(len, 1)
             }
             default {
-                // rest >= 1: first byte = low6 + 128 — spec: uint8(low6 + 128)
+                // rest >= 1: first byte = low6 + 128 -- spec: uint8(low6 + 128)
                 mstore8(add(ptr, len), add(low6, 128))
                 len := add(len, 1)
 
                 // -- Corresponds to MichelsonSpec._encodeZarithTail(rest) --
-                // IR (recursive, unrolled as loop):
-                //   if rest == 0: empty
-                //   if rest < 128: uint8(rest) — terminal
-                //   else: uint8(rest%128 + 128) ++ _encodeZarithTail(rest/128)
                 for {} gt(rest, 127) {} {
                     mstore8(add(ptr, len), add(mod(rest, 128), 128))
                     rest := div(rest, 128)
@@ -376,25 +615,18 @@ library Michelson {
         }
     }
 
-    /// @notice Encode int256 as Michelson PACK bytes using assembly.
-    function packInt(int256 v) internal pure returns (bytes memory result) {
+    /// @notice Encode int256 as Micheline bytes (0x00 tag + zarith) using assembly.
+    function int_(int256 v) internal pure returns (bytes memory result) {
         assembly {
             result := mload(0x40)
             let ptr := add(result, 32)
 
-            // -- Corresponds to MichelsonSpec.pack(MichelsonSpec.int_(v)) --
-            // IR: pack prepends 0x05; int_ prepends 0x00 tag
-            mstore8(ptr, 0x05)
-            mstore8(add(ptr, 1), 0x00)
-            let len := 2
+            // -- Corresponds to MichelsonSpec.int_(v) --
+            // Micheline: 0x00 tag
+            mstore8(ptr, 0x00)
+            let len := 1
 
             // -- Corresponds to MichelsonSpec._encodeZarithInt(v) --
-            // IR structure:
-            //   if z >= 0: _encodeZarithNat(uint256(z))
-            //   else (unchecked): a = uint256(-z), signBit = 64
-            //     if a < 64: uint8(a + 64)
-            //     else: uint8(a%64 + 64 + 128) ++ _encodeZarithTail(a/64)
-            // Assembly unifies positive/negative paths via signBit variable.
             let a := v
             let signBit := 0
             if slt(v, 0) {
@@ -417,7 +649,6 @@ library Michelson {
                 len := add(len, 1)
 
                 // -- Corresponds to MichelsonSpec._encodeZarithTail(rest) --
-                // IR: same recursive tail encoder as in _encodeZarithNat path
                 for {} gt(rest, 127) {} {
                     mstore8(add(ptr, len), add(mod(rest, 128), 128))
                     rest := div(rest, 128)
@@ -433,9 +664,182 @@ library Michelson {
         }
     }
 
+    /// @notice Encode bool as Micheline bytes using assembly.
+    function bool_(bool v) internal pure returns (bytes memory result) {
+        assembly {
+            result := mload(0x40)
+            mstore(result, 2) // length = 2
+            let ptr := add(result, 32)
+            mstore8(ptr, 0x03)
+            switch v
+            case 1 { mstore8(add(ptr, 1), 0x0A) }
+            default { mstore8(add(ptr, 1), 0x03) }
+            mstore(0x40, add(ptr, 32)) // update FMP (aligned)
+        }
+    }
+
+    /// @notice Encode unit as Micheline bytes using assembly.
+    function unit_() internal pure returns (bytes memory result) {
+        assembly {
+            result := mload(0x40)
+            mstore(result, 2) // length = 2
+            let ptr := add(result, 32)
+            mstore8(ptr, 0x03)
+            mstore8(add(ptr, 1), 0x0B)
+            mstore(0x40, add(ptr, 32)) // update FMP (aligned)
+        }
+    }
+
+    /// @notice Encode string as Micheline bytes using assembly.
+    function string_(string memory s) internal pure returns (bytes memory result) {
+        assembly {
+            let sLen := mload(s)
+            let sData := add(s, 32)
+
+            // Check length fits in uint32
+            if gt(sLen, 0xFFFFFFFF) {
+                mstore(0, shl(224, 0x44dddea2)) // IntOverflow()
+                revert(0, 4)
+            }
+
+            // Total length = 1 (tag) + 4 (length prefix) + sLen
+            let totalLen := add(5, sLen)
+
+            result := mload(0x40)
+            mstore(result, totalLen) // set bytes length
+            let ptr := add(result, 32)
+
+            // Write tag: 0x01
+            mstore8(ptr, 0x01)
+
+            // Write big-endian uint32 length
+            mstore8(add(ptr, 1), shr(24, sLen))
+            mstore8(add(ptr, 2), and(shr(16, sLen), 0xFF))
+            mstore8(add(ptr, 3), and(shr(8, sLen), 0xFF))
+            mstore8(add(ptr, 4), and(sLen, 0xFF))
+
+            // Copy string data using word-sized copies
+            let dst := add(ptr, 5)
+            let src := sData
+            let remaining := sLen
+
+            for {} gt(remaining, 31) {} {
+                mstore(dst, mload(src))
+                dst := add(dst, 32)
+                src := add(src, 32)
+                remaining := sub(remaining, 32)
+            }
+            // Copy remaining bytes (last partial word)
+            if gt(remaining, 0) {
+                let mask := sub(shl(mul(sub(32, remaining), 8), 1), 1)
+                let srcWord := mload(src)
+                let dstWord := mload(dst)
+                mstore(dst, or(and(srcWord, not(mask)), and(dstWord, mask)))
+            }
+
+            // Update free memory pointer (round up to 32-byte boundary)
+            mstore(0x40, and(add(add(ptr, totalLen), 31), not(31)))
+        }
+    }
+
+    // -- Corresponds to MichelsonSpec.bytes_ --
+    function bytes_(bytes memory data) internal pure returns (bytes memory) {
+        if ((data.length > type(uint32).max)) {
+            revert IntOverflow();
+        }
+        return abi.encodePacked(hex"0a", bytes4(uint32(data.length)), data);
+    }
+
+    // -- Corresponds to MichelsonSpec.pair --
+    function pair(bytes memory a, bytes memory b) internal pure returns (bytes memory) {
+        return abi.encodePacked(uint8(7), uint8(7), a, b);
+    }
+
+    // -- Corresponds to MichelsonSpec.left --
+    function left(bytes memory a) internal pure returns (bytes memory) {
+        return abi.encodePacked(uint8(5), uint8(5), a);
+    }
+
+    // -- Corresponds to MichelsonSpec.right --
+    function right(bytes memory b) internal pure returns (bytes memory) {
+        return abi.encodePacked(uint8(5), uint8(8), b);
+    }
+
+    // -- Corresponds to MichelsonSpec.some --
+    function some(bytes memory a) internal pure returns (bytes memory) {
+        return abi.encodePacked(uint8(5), uint8(9), a);
+    }
+
+    // -- Corresponds to MichelsonSpec.none --
+    function none() internal pure returns (bytes memory) {
+        return abi.encodePacked(uint8(3), uint8(6));
+    }
+
+    // -- Corresponds to MichelsonSpec.list --
+    function list(bytes[] memory items) internal pure returns (bytes memory) {
+        bytes memory payload;
+        for (uint256 i = 0; i < items.length; i++) {
+            payload = abi.encodePacked(payload, items[i]);
+        }
+        return abi.encodePacked(hex"02", bytes4(uint32(payload.length)), payload);
+    }
+
+    // -- Corresponds to MichelsonSpec.elt --
+    function elt(bytes memory k, bytes memory v) internal pure returns (bytes memory) {
+        return abi.encodePacked(uint8(7), uint8(4), k, v);
+    }
+
+    // -- Corresponds to MichelsonSpec.map --
+    function map(bytes[] memory elts) internal pure returns (bytes memory) {
+        return list(elts);
+    }
+
+    // -- Corresponds to MichelsonSpec.set --
+    function set(bytes[] memory items) internal pure returns (bytes memory) {
+        return list(items);
+    }
+
+    // -- Corresponds to MichelsonSpec.address_ (same as bytes_) --
+    function address_(bytes memory addr) internal pure returns (bytes memory) {
+        return bytes_(addr);
+    }
+
+    // -- Corresponds to MichelsonSpec.keyHash (same as bytes_) --
+    function keyHash(bytes memory kh) internal pure returns (bytes memory) {
+        return bytes_(kh);
+    }
+
+    // -- Corresponds to MichelsonSpec.key (same as bytes_) --
+    function key(bytes memory k) internal pure returns (bytes memory) {
+        return bytes_(k);
+    }
+
+    // -- Corresponds to MichelsonSpec.signature_ (same as bytes_) --
+    function signature_(bytes memory sig) internal pure returns (bytes memory) {
+        return bytes_(sig);
+    }
+
+    // -- Corresponds to MichelsonSpec.chainId (same as bytes_) --
+    function chainId(bytes memory cid) internal pure returns (bytes memory) {
+        return bytes_(cid);
+    }
+
+    // -- Corresponds to MichelsonSpec.contract_ (same as bytes_) --
+    function contract_(bytes memory data) internal pure returns (bytes memory) {
+        return bytes_(data);
+    }
+
     // ================================================================
-    // Optimized packToEVMBool: PACK bytes -> bytes32
+    // Optimized packToEVMNat / packToEVMInt / packToEVMBool
     // ================================================================
+
+    function packToEVMNat(bytes memory packed) internal pure returns (bytes32) {
+        return bytes32(toNat(unpack(packed)));
+    }
+
+    function packToEVMInt(bytes memory packed) internal pure returns (bytes32) {
+        return bytes32(uint256(toInt(unpack(packed))));
+    }
 
     function packToEVMBool(bytes memory packed) internal pure returns (bytes32 result) {
         assembly {
@@ -481,410 +885,74 @@ library Michelson {
     }
 
     // ================================================================
-    // Bool: pack / unpack
+    // Private helpers (inlined from MichelsonSpec)
     // ================================================================
 
-    /// @notice Encode bool as Michelson PACK bytes using assembly.
-    function packBool(bool v) internal pure returns (bytes memory result) {
-        assembly {
-            result := mload(0x40)
-            mstore(result, 3) // length = 3
-            let ptr := add(result, 32)
-            mstore8(ptr, 0x05)
-            mstore8(add(ptr, 1), 0x03)
-            switch v
-            case 1 { mstore8(add(ptr, 2), 0x0A) }
-            default { mstore8(add(ptr, 2), 0x03) }
-            mstore(0x40, add(ptr, 32)) // update FMP (aligned)
+    // -- Corresponds to MichelsonSpec._slice --
+    function _slice(bytes memory data, uint256 start, uint256 len) private pure returns (bytes memory result) {
+        result = new bytes(len);
+        for (uint256 i = 0; i < len; i++) {
+            result[i] = data[(start + i)];
         }
     }
 
-    /// @notice Decode Michelson PACK bytes to bool using assembly.
-    function unpackBool(bytes memory packed) internal pure returns (bool result) {
-        assembly {
-            let len := mload(packed)
-            if iszero(eq(len, 3)) {
-                mstore(0, shl(224, 0x79fdd2ae)) // InputTruncated()
-                revert(0, 4)
-            }
-            let hdr := mload(add(packed, 32))
-            let b0 := byte(0, hdr)
-            let b1 := byte(1, hdr)
-            let b2 := byte(2, hdr)
-            if iszero(eq(b0, 0x05)) {
-                mstore(0, shl(224, 0xe51a2409)) // InvalidVersionByte(uint8)
-                mstore(4, b0)
-                revert(0, 36)
-            }
-            if iszero(eq(b1, 0x03)) {
-                mstore(0, shl(224, 0x1dd0dc36)) // UnexpectedNodeTag(uint8,uint8)
-                mstore(4, 0x03)
-                mstore(36, b1)
-                revert(0, 68)
-            }
-            switch b2
-            case 0x0A { result := 1 }
-            case 0x03 { result := 0 }
-            default {
-                mstore(0, shl(224, 0xb8ff4ada)) // InvalidBoolTag(uint8)
-                mstore(4, b2)
-                revert(0, 36)
-            }
+    // -- Corresponds to MichelsonSpec._michelineNodeSize --
+    function _michelineNodeSize(bytes memory data, uint256 offset, uint256 depth) private pure returns (uint256) {
+        if ((depth > 64)) {
+            revert InputTruncated();
         }
-    }
-
-    // ================================================================
-    // Unit: pack / unpack
-    // ================================================================
-
-    /// @notice Encode unit as Michelson PACK bytes using assembly.
-    function packUnit() internal pure returns (bytes memory result) {
-        assembly {
-            result := mload(0x40)
-            mstore(result, 3) // length = 3
-            let ptr := add(result, 32)
-            mstore8(ptr, 0x05)
-            mstore8(add(ptr, 1), 0x03)
-            mstore8(add(ptr, 2), 0x0B)
-            mstore(0x40, add(ptr, 32)) // update FMP (aligned)
+        if ((offset >= data.length)) {
+            revert InputTruncated();
         }
+        uint8 tag = uint8(data[offset]);
+        if ((tag == 0x00)) {
+            uint256 i = (offset + 1);
+            while ((i < data.length)) {
+                if ((uint8(data[i]) < 128)) {
+                    return ((i - offset) + 1);
+                }
+                i = (i + 1);
+            }
+            revert InputTruncated();
+        } else         if ((((tag == 0x01) || (tag == 0x02)) || (tag == 0x0A))) {
+            if (((offset + 5) > data.length)) {
+                revert InputTruncated();
+            }
+            uint256 len = uint256(uint8(data[(offset + 1)])) << 24
+                    | uint256(uint8(data[(offset + 2)])) << 16
+                    | uint256(uint8(data[(offset + 3)])) << 8
+                    | uint256(uint8(data[(offset + 4)]));
+            if ((((offset + 5) + len) > data.length)) {
+                revert InputTruncated();
+            }
+            return (5 + len);
+        } else         if ((tag == 0x03)) {
+            return 2;
+        } else         if ((tag == 0x05)) {
+            uint256 childSize = _michelineNodeSize(data, (offset + 2), (depth + 1));
+            return (2 + childSize);
+        } else         if ((tag == 0x07)) {
+            uint256 child1Size = _michelineNodeSize(data, (offset + 2), (depth + 1));
+            uint256 child2Size = _michelineNodeSize(data, ((offset + 2) + child1Size), (depth + 1));
+            return ((2 + child1Size) + child2Size);
+        } else         revert InputTruncated();
     }
 
-    /// @notice Decode Michelson PACK bytes as unit using assembly.
-    function unpackUnit(bytes memory packed) internal pure {
-        assembly {
-            let len := mload(packed)
-            if iszero(eq(len, 3)) {
-                mstore(0, shl(224, 0x79fdd2ae)) // InputTruncated()
-                revert(0, 4)
-            }
-            let hdr := mload(add(packed, 32))
-            if iszero(eq(byte(0, hdr), 0x05)) {
-                mstore(0, shl(224, 0xe51a2409)) // InvalidVersionByte(uint8)
-                mstore(4, byte(0, hdr))
-                revert(0, 36)
-            }
-            if iszero(eq(byte(1, hdr), 0x03)) {
-                mstore(0, shl(224, 0x1dd0dc36)) // UnexpectedNodeTag(uint8,uint8)
-                mstore(4, 0x03)
-                mstore(36, byte(1, hdr))
-                revert(0, 68)
-            }
-            if iszero(eq(byte(2, hdr), 0x0B)) {
-                mstore(0, shl(224, 0x1dd0dc36)) // UnexpectedNodeTag(uint8,uint8)
-                mstore(4, 0x0B)
-                mstore(36, byte(2, hdr))
-                revert(0, 68)
-            }
+    // -- Corresponds to MichelsonSpec._toListPayload --
+    function _toListPayload(bytes memory micheline) private pure returns (bytes memory payload) {
+        if ((micheline.length < 5)) {
+            revert InputTruncated();
         }
-    }
-
-    // ================================================================
-    // String: pack / unpack
-    // ================================================================
-
-    /// @notice Encode string as Michelson PACK bytes using assembly.
-    function packString(string memory s) internal pure returns (bytes memory result) {
-        assembly {
-            let sLen := mload(s)
-            let sData := add(s, 32)
-
-            // Check length fits in uint32
-            if gt(sLen, 0xFFFFFFFF) {
-                mstore(0, shl(224, 0x44dddea2)) // IntOverflow()
-                revert(0, 4)
-            }
-
-            // Total length = 2 (header) + 4 (length prefix) + sLen
-            let totalLen := add(6, sLen)
-
-            result := mload(0x40)
-            mstore(result, totalLen) // set bytes length
-            let ptr := add(result, 32)
-
-            // Write header: 0x05 0x01
-            mstore8(ptr, 0x05)
-            mstore8(add(ptr, 1), 0x01)
-
-            // Write big-endian uint32 length
-            mstore8(add(ptr, 2), shr(24, sLen))
-            mstore8(add(ptr, 3), and(shr(16, sLen), 0xFF))
-            mstore8(add(ptr, 4), and(shr(8, sLen), 0xFF))
-            mstore8(add(ptr, 5), and(sLen, 0xFF))
-
-            // Copy string data using word-sized copies
-            let dst := add(ptr, 6)
-            let src := sData
-            let remaining := sLen
-
-            for {} gt(remaining, 31) {} {
-                mstore(dst, mload(src))
-                dst := add(dst, 32)
-                src := add(src, 32)
-                remaining := sub(remaining, 32)
-            }
-            // Copy remaining bytes (last partial word)
-            if gt(remaining, 0) {
-                let mask := sub(shl(mul(sub(32, remaining), 8), 1), 1)
-                let srcWord := mload(src)
-                let dstWord := mload(dst)
-                mstore(dst, or(and(srcWord, not(mask)), and(dstWord, mask)))
-            }
-
-            // Update free memory pointer (round up to 32-byte boundary)
-            mstore(0x40, and(add(add(ptr, totalLen), 31), not(31)))
+        if ((uint8(micheline[0]) != 0x02)) {
+            revert UnexpectedNodeTag(0x02, uint8(micheline[0]));
         }
-    }
-
-    /// @notice Decode Michelson PACK bytes to string using assembly.
-    function unpackString(bytes memory packed) internal pure returns (string memory result) {
-        assembly {
-            let pLen := mload(packed)
-            let pPtr := add(packed, 32)
-
-            // Minimum: 2 (header) + 4 (length) = 6
-            if lt(pLen, 6) {
-                mstore(0, shl(224, 0x79fdd2ae)) // InputTruncated()
-                revert(0, 4)
-            }
-
-            let hdr := mload(pPtr)
-
-            // Check version byte 0x05
-            if iszero(eq(byte(0, hdr), 0x05)) {
-                mstore(0, shl(224, 0xe51a2409)) // InvalidVersionByte(uint8)
-                mstore(4, byte(0, hdr))
-                revert(0, 36)
-            }
-
-            // Check node tag 0x01 (string)
-            if iszero(eq(byte(1, hdr), 0x01)) {
-                mstore(0, shl(224, 0x1dd0dc36)) // UnexpectedNodeTag(uint8,uint8)
-                mstore(4, 0x01)
-                mstore(36, byte(1, hdr))
-                revert(0, 68)
-            }
-
-            // Read big-endian uint32 length from bytes 2..5
-            let sLen := or(or(or(
-                shl(24, byte(2, hdr)),
-                shl(16, byte(3, hdr))),
-                shl(8, byte(4, hdr))),
-                byte(5, hdr))
-
-            // Validate total length
-            if iszero(eq(pLen, add(6, sLen))) {
-                mstore(0, shl(224, 0xc3e44a73)) // TrailingBytes(uint256,uint256)
-                mstore(4, add(6, sLen))
-                mstore(36, pLen)
-                revert(0, 68)
-            }
-
-            // Allocate result string
-            result := mload(0x40)
-            mstore(result, sLen) // set string length
-            let dst := add(result, 32)
-            let src := add(pPtr, 6)
-            let remaining := sLen
-
-            // Word-sized copy
-            for {} gt(remaining, 31) {} {
-                mstore(dst, mload(src))
-                dst := add(dst, 32)
-                src := add(src, 32)
-                remaining := sub(remaining, 32)
-            }
-            // Copy remaining bytes
-            if gt(remaining, 0) {
-                let mask := sub(shl(mul(sub(32, remaining), 8), 1), 1)
-                let srcWord := mload(src)
-                let dstWord := mload(dst)
-                mstore(dst, or(and(srcWord, not(mask)), and(dstWord, mask)))
-            }
-
-            // Update free memory pointer
-            mstore(0x40, and(add(add(add(result, 32), sLen), 31), not(31)))
+        uint256 len = uint256(uint8(micheline[1])) << 24
+                    | uint256(uint8(micheline[2])) << 16
+                    | uint256(uint8(micheline[3])) << 8
+                    | uint256(uint8(micheline[4]));
+        if ((micheline.length != (5 + len))) {
+            revert TrailingBytes((5 + len), micheline.length);
         }
-    }
-
-    // ================================================================
-    // Mutez: pack / unpack (delegates to nat + bounds check)
-    // ================================================================
-
-    /// @notice Encode mutez as Michelson PACK bytes using assembly.
-    function packMutez(uint64 v) internal pure returns (bytes memory) {
-        return packNat(uint256(v));
-    }
-
-    /// @notice Decode Michelson PACK bytes to mutez using assembly.
-    function unpackMutez(bytes memory packed) internal pure returns (uint64) {
-        uint256 val = unpackNat(packed);
-        assembly {
-            // mutez is bounded to 0 .. 2^63 - 1
-            if gt(val, 9223372036854775807) {
-                mstore(0, shl(224, 0x44dddea2)) // IntOverflow()
-                revert(0, 4)
-            }
-        }
-        return uint64(val);
-    }
-
-    // ================================================================
-    // Timestamp: pack / unpack (delegates to int + bounds check)
-    // ================================================================
-
-    /// @notice Encode timestamp as Michelson PACK bytes using assembly.
-    function packTimestamp(int64 v) internal pure returns (bytes memory) {
-        return packInt(int256(v));
-    }
-
-    /// @notice Decode Michelson PACK bytes to timestamp using assembly.
-    function unpackTimestamp(bytes memory packed) internal pure returns (int64) {
-        int256 val = unpackInt(packed);
-        assembly {
-            // timestamp is bounded to -2^63 .. 2^63 - 1
-            if or(slt(val, sub(0, 9223372036854775808)), sgt(val, 9223372036854775807)) {
-                mstore(0, shl(224, 0x44dddea2)) // IntOverflow()
-                revert(0, 4)
-            }
-        }
-        return int64(val);
-    }
-
-    // ================================================================
-    // Bytes: pack / unpack (delegate to spec -- simple concat)
-    // ================================================================
-
-    function packBytes(bytes memory data) internal pure returns (bytes memory) {
-        return MichelsonSpec.pack(MichelsonSpec.bytes_(data));
-    }
-    function unpackBytes(bytes memory packed) internal pure returns (bytes memory) {
-        return MichelsonSpec.toBytes(MichelsonSpec.unpack(packed));
-    }
-
-    // ================================================================
-    // Address, Key_hash, Key, Signature, Chain_id, Contract
-    // (all delegate to packBytes/unpackBytes)
-    // ================================================================
-
-    function packAddress(bytes memory addr) internal pure returns (bytes memory) {
-        return packBytes(addr);
-    }
-    function unpackAddress(bytes memory packed) internal pure returns (bytes memory) {
-        return unpackBytes(packed);
-    }
-    function packKeyHash(bytes memory kh) internal pure returns (bytes memory) {
-        return packBytes(kh);
-    }
-    function unpackKeyHash(bytes memory packed) internal pure returns (bytes memory) {
-        return unpackBytes(packed);
-    }
-    function packKey(bytes memory k) internal pure returns (bytes memory) {
-        return packBytes(k);
-    }
-    function unpackKey(bytes memory packed) internal pure returns (bytes memory) {
-        return unpackBytes(packed);
-    }
-    function packSignature(bytes memory sig) internal pure returns (bytes memory) {
-        return packBytes(sig);
-    }
-    function unpackSignature(bytes memory packed) internal pure returns (bytes memory) {
-        return unpackBytes(packed);
-    }
-    function packChainId(bytes memory cid) internal pure returns (bytes memory) {
-        return packBytes(cid);
-    }
-    function unpackChainId(bytes memory packed) internal pure returns (bytes memory) {
-        return unpackBytes(packed);
-    }
-    function packContract(bytes memory data) internal pure returns (bytes memory) {
-        return packBytes(data);
-    }
-    function unpackContract(bytes memory packed) internal pure returns (bytes memory) {
-        return unpackBytes(packed);
-    }
-
-    // ================================================================
-    // Composite types: encode (delegate to spec)
-    // ================================================================
-
-    function pair(bytes memory a, bytes memory b) internal pure returns (bytes memory) {
-        return MichelsonSpec.pair(a, b);
-    }
-    function left(bytes memory a) internal pure returns (bytes memory) {
-        return MichelsonSpec.left(a);
-    }
-    function right(bytes memory b) internal pure returns (bytes memory) {
-        return MichelsonSpec.right(b);
-    }
-    function some(bytes memory a) internal pure returns (bytes memory) {
-        return MichelsonSpec.some(a);
-    }
-    function none() internal pure returns (bytes memory) {
-        return MichelsonSpec.none();
-    }
-    function list(bytes[] memory items) internal pure returns (bytes memory) {
-        return MichelsonSpec.list(items);
-    }
-    function elt(bytes memory k, bytes memory v) internal pure returns (bytes memory) {
-        return MichelsonSpec.elt(k, v);
-    }
-    function map(bytes[] memory elts) internal pure returns (bytes memory) {
-        return MichelsonSpec.map(elts);
-    }
-    function set(bytes[] memory items) internal pure returns (bytes memory) {
-        return MichelsonSpec.set(items);
-    }
-
-    // ================================================================
-    // Composite types: pack (delegate to spec)
-    // ================================================================
-
-    function packPair(bytes memory a, bytes memory b) internal pure returns (bytes memory) {
-        return MichelsonSpec.pack(MichelsonSpec.pair(a, b));
-    }
-    function packLeft(bytes memory a) internal pure returns (bytes memory) {
-        return MichelsonSpec.pack(MichelsonSpec.left(a));
-    }
-    function packRight(bytes memory b) internal pure returns (bytes memory) {
-        return MichelsonSpec.pack(MichelsonSpec.right(b));
-    }
-    function packSome(bytes memory a) internal pure returns (bytes memory) {
-        return MichelsonSpec.pack(MichelsonSpec.some(a));
-    }
-    function packNone() internal pure returns (bytes memory) {
-        return MichelsonSpec.pack(MichelsonSpec.none());
-    }
-    function packList(bytes[] memory items) internal pure returns (bytes memory) {
-        return MichelsonSpec.pack(MichelsonSpec.list(items));
-    }
-    function packMap(bytes[] memory elts) internal pure returns (bytes memory) {
-        return MichelsonSpec.pack(MichelsonSpec.map(elts));
-    }
-    function packSet(bytes[] memory items) internal pure returns (bytes memory) {
-        return MichelsonSpec.pack(MichelsonSpec.set(items));
-    }
-
-    // ================================================================
-    // Composite types: unpack (delegate to spec)
-    // ================================================================
-
-    function unpackPair(bytes memory packed) internal pure returns (bytes memory a, bytes memory b) {
-        return MichelsonSpec.toPair(MichelsonSpec.unpack(packed));
-    }
-    function unpackOr(bytes memory packed) internal pure returns (bool isLeft, bytes memory value) {
-        return MichelsonSpec.toOr(MichelsonSpec.unpack(packed));
-    }
-    function unpackOption(bytes memory packed) internal pure returns (bool isSome, bytes memory value) {
-        return MichelsonSpec.toOption(MichelsonSpec.unpack(packed));
-    }
-    function unpackList(bytes memory packed) internal pure returns (bytes[] memory) {
-        return MichelsonSpec.toList(MichelsonSpec.unpack(packed));
-    }
-    function unpackMap(bytes memory packed) internal pure returns (bytes[] memory) {
-        return MichelsonSpec.toMap(MichelsonSpec.unpack(packed));
-    }
-    function unpackSet(bytes memory packed) internal pure returns (bytes[] memory) {
-        return MichelsonSpec.toSet(MichelsonSpec.unpack(packed));
+        payload = _slice(micheline, 5, len);
     }
 }

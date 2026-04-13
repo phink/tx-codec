@@ -16,13 +16,13 @@ contract HalmosAsmEquivalence is Test {
     function check_unpackNat_asm_eq_spec(uint256 n) public pure {
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.nat(n));
         uint256 specVal = MichelsonSpec.toNat(MichelsonSpec.unpack(packed));
-        uint256 asmVal = Michelson.unpackNat(packed);
+        uint256 asmVal = Michelson.toNat(Michelson.unpack(packed));
         assert(asmVal == specVal);
     }
 
     function check_unpackNat_asm_roundtrip(uint256 n) public pure {
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.nat(n));
-        assert(Michelson.unpackNat(packed) == n);
+        assert(Michelson.toNat(Michelson.unpack(packed)) == n);
     }
 
     // ================================================================
@@ -32,13 +32,13 @@ contract HalmosAsmEquivalence is Test {
     function check_unpackInt_asm_eq_spec(int256 v) public pure {
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.int_(v));
         int256 specVal = MichelsonSpec.toInt(MichelsonSpec.unpack(packed));
-        int256 asmVal = Michelson.unpackInt(packed);
+        int256 asmVal = Michelson.toInt(Michelson.unpack(packed));
         assert(asmVal == specVal);
     }
 
     function check_unpackInt_asm_roundtrip(int256 v) public pure {
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.int_(v));
-        assert(Michelson.unpackInt(packed) == v);
+        assert(Michelson.toInt(Michelson.unpack(packed)) == v);
     }
 
     // ================================================================
@@ -89,7 +89,7 @@ contract HalmosAsmEquivalence is Test {
         vm.assume(v <= type(uint64).max / 2);
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.nat(uint256(v)));
         uint64 specVal = MichelsonSpec.toMutez(MichelsonSpec.unpack(packed));
-        uint256 asmVal = Michelson.unpackNat(packed);
+        uint256 asmVal = Michelson.toNat(Michelson.unpack(packed));
         assert(uint256(specVal) == asmVal);
     }
 
@@ -104,7 +104,7 @@ contract HalmosAsmEquivalence is Test {
     function check_unpackTimestamp_asm_eq_spec(int64 v) public pure {
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.int_(int256(v)));
         int64 specVal = MichelsonSpec.toTimestamp(MichelsonSpec.unpack(packed));
-        int256 asmVal = Michelson.unpackInt(packed);
+        int256 asmVal = Michelson.toInt(Michelson.unpack(packed));
         assert(int256(specVal) == asmVal);
     }
 
@@ -114,13 +114,13 @@ contract HalmosAsmEquivalence is Test {
 
     function check_packNat_asm_eq_spec(uint256 n) public pure {
         bytes memory specPacked = MichelsonSpec.pack(MichelsonSpec.nat(n));
-        bytes memory asmPacked = Michelson.packNat(n);
+        bytes memory asmPacked = Michelson.pack(Michelson.nat(n));
         assert(keccak256(specPacked) == keccak256(asmPacked));
     }
 
     function check_packInt_asm_eq_spec(int256 v) public pure {
         bytes memory specPacked = MichelsonSpec.pack(MichelsonSpec.int_(v));
-        bytes memory asmPacked = Michelson.packInt(v);
+        bytes memory asmPacked = Michelson.pack(Michelson.int_(v));
         assert(keccak256(specPacked) == keccak256(asmPacked));
     }
 
@@ -143,7 +143,7 @@ contract HalmosAsmEquivalence is Test {
         bytes memory encB = MichelsonSpec.int_(b);
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.pair(encA, encB));
         (bytes memory specL, bytes memory specR) = MichelsonSpec.toPair(MichelsonSpec.unpack(packed));
-        (bytes memory asmL, bytes memory asmR) = Michelson.unpackPair(packed);
+        (bytes memory asmL, bytes memory asmR) = Michelson.toPair(Michelson.unpack(packed));
         assert(keccak256(asmL) == keccak256(specL));
         assert(keccak256(asmR) == keccak256(specR));
     }
@@ -169,7 +169,7 @@ contract HalmosAsmEquivalence is Test {
     function check_unpackOr_left_asm_eq_spec(uint256 n) public pure {
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.left(MichelsonSpec.nat(n)));
         (bool specIsLeft, bytes memory specVal) = MichelsonSpec.toOr(MichelsonSpec.unpack(packed));
-        (bool asmIsLeft, bytes memory asmVal) = Michelson.unpackOr(packed);
+        (bool asmIsLeft, bytes memory asmVal) = Michelson.toOr(Michelson.unpack(packed));
         assert(asmIsLeft == specIsLeft);
         assert(keccak256(asmVal) == keccak256(specVal));
     }
@@ -177,7 +177,7 @@ contract HalmosAsmEquivalence is Test {
     function check_unpackOr_right_asm_eq_spec(int256 v) public pure {
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.right(MichelsonSpec.int_(v)));
         (bool specIsLeft, bytes memory specVal) = MichelsonSpec.toOr(MichelsonSpec.unpack(packed));
-        (bool asmIsLeft, bytes memory asmVal) = Michelson.unpackOr(packed);
+        (bool asmIsLeft, bytes memory asmVal) = Michelson.toOr(Michelson.unpack(packed));
         assert(asmIsLeft == specIsLeft);
         assert(keccak256(asmVal) == keccak256(specVal));
     }
@@ -201,7 +201,7 @@ contract HalmosAsmEquivalence is Test {
     function check_unpackOption_some_asm_eq_spec(uint256 n) public pure {
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.some(MichelsonSpec.nat(n)));
         (bool specIsSome, bytes memory specVal) = MichelsonSpec.toOption(MichelsonSpec.unpack(packed));
-        (bool asmIsSome, bytes memory asmVal) = Michelson.unpackOption(packed);
+        (bool asmIsSome, bytes memory asmVal) = Michelson.toOption(Michelson.unpack(packed));
         assert(asmIsSome == specIsSome);
         assert(keccak256(asmVal) == keccak256(specVal));
     }
@@ -209,7 +209,7 @@ contract HalmosAsmEquivalence is Test {
     function check_unpackOption_none_asm_eq_spec() public pure {
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.none());
         (bool specIsSome, bytes memory specVal) = MichelsonSpec.toOption(MichelsonSpec.unpack(packed));
-        (bool asmIsSome, bytes memory asmVal) = Michelson.unpackOption(packed);
+        (bool asmIsSome, bytes memory asmVal) = Michelson.toOption(Michelson.unpack(packed));
         assert(asmIsSome == specIsSome);
         assert(keccak256(asmVal) == keccak256(specVal));
     }
@@ -249,7 +249,7 @@ contract HalmosAsmEquivalence is Test {
         bytes[] memory items = new bytes[](0);
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.list(items));
         bytes[] memory specItems = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
-        bytes[] memory asmItems = Michelson.unpackList(packed);
+        bytes[] memory asmItems = Michelson.toList(Michelson.unpack(packed));
         assert(asmItems.length == specItems.length);
     }
 
@@ -259,7 +259,7 @@ contract HalmosAsmEquivalence is Test {
         items[1] = MichelsonSpec.nat(b);
         bytes memory packed = MichelsonSpec.pack(MichelsonSpec.list(items));
         bytes[] memory specItems = MichelsonSpec.toList(MichelsonSpec.unpack(packed));
-        bytes[] memory asmItems = Michelson.unpackList(packed);
+        bytes[] memory asmItems = Michelson.toList(Michelson.unpack(packed));
         assert(asmItems.length == specItems.length);
         for (uint i = 0; i < specItems.length; i++) {
             assert(keccak256(asmItems[i]) == keccak256(specItems[i]));
@@ -275,7 +275,7 @@ contract HalmosAdversarial is Test {
     }
 
     function _asmUnpackNat(bytes memory packed) external pure returns (uint256) {
-        return Michelson.unpackNat(packed);
+        return Michelson.toNat(Michelson.unpack(packed));
     }
 
     function _specUnpackInt(bytes memory packed) external pure returns (int256) {
@@ -283,7 +283,7 @@ contract HalmosAdversarial is Test {
     }
 
     function _asmUnpackInt(bytes memory packed) external pure returns (int256) {
-        return Michelson.unpackInt(packed);
+        return Michelson.toInt(Michelson.unpack(packed));
     }
 
     function check_unpackNat_asm_eq_spec_arbitrary(bytes memory packed) public view {
@@ -344,8 +344,8 @@ contract HalmosBinaryRoundtrip is Test {
 
     function check_packAddress_roundtrip(bytes memory addr) public pure {
         vm.assume(addr.length > 0 && addr.length <= 100);
-        bytes memory packed = Michelson.packAddress(addr);
-        bytes memory decoded = Michelson.unpackAddress(packed);
+        bytes memory packed = Michelson.pack(Michelson.address_(addr));
+        bytes memory decoded = Michelson.toAddress(Michelson.unpack(packed));
         assertEq(decoded, addr);
     }
 
@@ -355,8 +355,8 @@ contract HalmosBinaryRoundtrip is Test {
 
     function check_packBytes_roundtrip(bytes memory data) public pure {
         vm.assume(data.length <= 100);
-        bytes memory packed = Michelson.packBytes(data);
-        bytes memory decoded = Michelson.unpackBytes(packed);
+        bytes memory packed = Michelson.pack(Michelson.bytes_(data));
+        bytes memory decoded = Michelson.toBytes(Michelson.unpack(packed));
         assertEq(decoded, data);
     }
 
@@ -366,8 +366,8 @@ contract HalmosBinaryRoundtrip is Test {
 
     function check_packKeyHash_roundtrip(bytes memory kh) public pure {
         vm.assume(kh.length > 0 && kh.length <= 100);
-        bytes memory packed = Michelson.packKeyHash(kh);
-        bytes memory decoded = Michelson.unpackKeyHash(packed);
+        bytes memory packed = Michelson.pack(Michelson.keyHash(kh));
+        bytes memory decoded = Michelson.toKeyHash(Michelson.unpack(packed));
         assertEq(decoded, kh);
     }
 
@@ -377,8 +377,8 @@ contract HalmosBinaryRoundtrip is Test {
 
     function check_packKey_roundtrip(bytes memory k) public pure {
         vm.assume(k.length > 0 && k.length <= 100);
-        bytes memory packed = Michelson.packKey(k);
-        bytes memory decoded = Michelson.unpackKey(packed);
+        bytes memory packed = Michelson.pack(Michelson.key(k));
+        bytes memory decoded = Michelson.toKey(Michelson.unpack(packed));
         assertEq(decoded, k);
     }
 
@@ -388,8 +388,8 @@ contract HalmosBinaryRoundtrip is Test {
 
     function check_packSignature_roundtrip(bytes memory sig) public pure {
         vm.assume(sig.length > 0 && sig.length <= 100);
-        bytes memory packed = Michelson.packSignature(sig);
-        bytes memory decoded = Michelson.unpackSignature(packed);
+        bytes memory packed = Michelson.pack(Michelson.signature_(sig));
+        bytes memory decoded = Michelson.toSignature(Michelson.unpack(packed));
         assertEq(decoded, sig);
     }
 
@@ -399,8 +399,8 @@ contract HalmosBinaryRoundtrip is Test {
 
     function check_packChainId_roundtrip(bytes memory cid) public pure {
         vm.assume(cid.length > 0 && cid.length <= 100);
-        bytes memory packed = Michelson.packChainId(cid);
-        bytes memory decoded = Michelson.unpackChainId(packed);
+        bytes memory packed = Michelson.pack(Michelson.chainId(cid));
+        bytes memory decoded = Michelson.toChainId(Michelson.unpack(packed));
         assertEq(decoded, cid);
     }
 }
